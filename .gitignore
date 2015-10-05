@@ -1,3 +1,8 @@
+## hide python build
+build/*
+dist/*
+pyMLC.egg-info
+
 ## Core latex/pdflatex auxiliary files:
 *.aux
 *.lof
