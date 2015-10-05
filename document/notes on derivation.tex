@@ -1,0 +1,88 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{ amssymb }
+
+
+
+\usepackage{float}
+
+
+\title{Notes on the Derivation}
+\author{Junchen Feng}
+
+\begin{document}
+\maketitle
+
+\section{Derivation on the EM Algorithm}
+All notation follows Streeter(2015)'s paper.\\
+The log likelihood function for the observed data is \[
+\mathcal{L} = \sum_{s}\{log[\sum_{j}p_j\prod_{t}\mathcal{B}(q_t^j, v_t)]\}
+\]
+Also borrow the notation
+\begin{align*}
+L_{s,j} &= p_j\prod_{t}\mathcal{B}(q_t^j, v_t) \\
+z_{s,j} &= \frac{L_{s,j}}{\sum_{j'} L_{s,j'}}
+\end{align*}
+
+
+\subsection{$q_t^j$}
+\begin{align*}
+\frac{\partial \mathcal{L} }{\partial q_t^j} &=  \sum_{s} \frac{\frac{\partial L_{s,j}}{\partial q_t^j}}{\sum_{j}L_{s,j}}\\
+&= \sum_{s} (\frac{\partial L_{s,j}}{\partial q_t^j}\frac{1}{L_{s,j}})\frac{L_{s,j}}{\sum_{j}L_{s,j}}\\
+&= \sum_{s} \frac{\partial log(L_{s,j})}{\partial q_t^j} z_{s,j}\\
+&= \frac{1}{q_t^j(1-q_t^j)}\sum_{s} (v_t^s(1-q_t^j)-(1-v_t^s)q_t^j)z_{s,j}\\
+&= \frac{1}{q_t^j(1-q_t^j)}\sum_{s} (v_t^s-q_t^j)z_{s,j}\\
+&=0
+\end{align*}
+From here it is easy to derive that
+\[
+\hat{q}_{t+1}^j = \frac{\sum_{s}v_t^sz_{s,j}}{\sum_{s}z_{s,j}}
+\]
+
+Streeter then use beta prior to shrink the estimate by
+\[
+q_{t+1}^j = \frac{\alpha-1+\sum_{s}v_t^sz_{s,j}}{\alpha+\beta-2+\sum_{s}z_{s,j}}
+\]
+Note that the original $v_s^j$ is likely a typo.
+
+\subsection{$p_j$}
+To add the constraint that $\sum_{j}p_j = 1$, use the lagrange multipler so that 
+\begin{align*}
+\frac{\partial \mathcal{G} }{\partial p^j} &=  \sum_{s} \frac{1}{p^j}\frac{L_{s,j}}{\sum_{j}L_{s,j}} =  \frac{1}{p^j} \sum_{s} z_{s,j} = 0\\
+\frac{\partial \mathcal{G} }{\partial p^j} &= 1 - \sum_{j}p^j = 0
+\end{align*}
+
+Some simple algebra yields
+\[
+p^j_{t+1} = \frac{\sum_{s} z_{s,j}}{\sum_{j'}\sum_{s} z_{s,j'}}
+\]
+
+\section{Derivation on the Equivalence to BKT}
+The weight can be derived from the fact that the probability of mastering the knowledge component has to be the same at time $t$ has to be the same.
+\[
+P(M_t=1) = \sum_j p_jI(q_t^j=0.8)
+\]
+
+Let j = 1,2,3 denotes the solid line, dash line and dot line respectively.\\
+
+In the first period
+\[P(M_1=1)=p_1 = 0.5\]
+
+In the second period
+\begin{align*}
+P(M_2=1) &=p_1+p_2\\
+P(M_2=1) &= P(M_2=1,M_1=1)+P(M_2=1,M_1=0)\\ 
+		 &= P(M_2=1|M_1=1)P(M_1=1)+P(M_2=1|M_1=0)P(M_1=0)\\
+		 & = 1*0.5+0.5*0.5\\ 
+p_2 &= 0.25
+\end{align*}
+
+It can be proved by generalization that 
+\[
+p_j = 0.5^j
+\]
+
+\end{document}
+
