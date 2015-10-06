@@ -4,6 +4,7 @@ dist/*
 pyMLC.egg-info
 *.ipynb
 */.ipynb_checkpoints/*
+*.pyc
 
 ## Core latex/pdflatex auxiliary files:
 *.aux

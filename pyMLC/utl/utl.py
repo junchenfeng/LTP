@@ -1,3 +1,4 @@
+import math
 def B(v,q):
     if v == 0:
         return 1-q
