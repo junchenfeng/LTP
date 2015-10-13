@@ -48,10 +48,10 @@ q_{t+1}^j = \frac{\alpha-1+\sum_{s}v_t^sz_{s,j}}{\alpha+\beta-2+\sum_{s}z_{s,j}}
 Note that the original $v_s^j$ is likely a typo.
 
 \subsection{$p_j$}
-To add the constraint that $\sum_{j}p_j = 1$, use the lagrange multipler so that 
+To add the constraint that $\sum_{j}p_j = 1$, use the lagrange multipler so that
 \begin{align*}
-\frac{\partial \mathcal{G} }{\partial p^j} &=  \sum_{s} \frac{1}{p^j}\frac{L_{s,j}}{\sum_{j}L_{s,j}} =  \frac{1}{p^j} \sum_{s} z_{s,j} = 0\\
-\frac{\partial \mathcal{G} }{\partial p^j} &= 1 - \sum_{j}p^j = 0
+\frac{\partial \mathcal{G} }{\partial p^j} &=  -\lambda + \sum_{s} \frac{1}{p^j}\frac{L_{s,j}}{\sum_{j}L_{s,j}} = -\lambda + \frac{1}{p^j} \sum_{s} z_{s,j} = 0\\
+\frac{\partial \mathcal{G} }{\partial \lambda} &= 1 - \sum_{j}p^j = 0
 \end{align*}
 
 Some simple algebra yields
@@ -73,13 +73,13 @@ In the first period
 In the second period
 \begin{align*}
 P(M_2=1) &=p_1+p_2\\
-P(M_2=1) &= P(M_2=1,M_1=1)+P(M_2=1,M_1=0)\\ 
+P(M_2=1) &= P(M_2=1,M_1=1)+P(M_2=1,M_1=0)\\
 		 &= P(M_2=1|M_1=1)P(M_1=1)+P(M_2=1|M_1=0)P(M_1=0)\\
-		 & = 1*0.5+0.5*0.5\\ 
+		 & = 1*0.5+0.5*0.5\\
 p_2 &= 0.25
 \end{align*}
 
-It can be proved by generalization that 
+It can be proved by generalization that
 \[
 p_j = 0.5^j
 \]
