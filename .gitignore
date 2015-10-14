@@ -5,6 +5,7 @@ pyMLC.egg-info
 *.ipynb
 */.ipynb_checkpoints/*
 *.pyc
+data/hidden/*
 
 ## Core latex/pdflatex auxiliary files:
 *.aux
