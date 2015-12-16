@@ -28,14 +28,11 @@ test_instance.solve_EM()
 print([0.2, 0.4, 0.6, 0.8, 0.9])  # truth
 print(test_instance.learning_curve_matrix)  # estimated
 
-# compare the performance
-'''
-print(get_predict_performance(test_instance.user_result, 
+# compare the performa=`=jedi=0, nce=`= (response_lists, *_*learning_curve_matrix*_*, prior_mixture_density=None) =`=jedi=`=
+print(get_predict_performance(test_instance.response_data, 
                               test_instance.learning_curve_matrix,
-                              5,
                               test_instance.mixture_density))
 
-'''
 
 '''
 double component test
@@ -61,10 +58,9 @@ print('estimated rate')
 print(np.dot(true_mixture, true_param))
 print(np.dot(test_instance.learning_curve_matrix, test_instance.mixture_density))
 
-'''
+
 print('forecast fitness')
-print(get_predict_performance(test_instance.user_result, 
+print(get_predict_performance(test_instance.response_data, 
                               test_instance.learning_curve_matrix,
-                              5,
                               test_instance.mixture_density))
-'''
+

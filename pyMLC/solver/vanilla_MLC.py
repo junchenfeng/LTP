@@ -19,9 +19,8 @@ class RunVanillaMLC(object):
         self.max_iteration = 10
 
     def load_data(self, file_path):
-        self.user_result = data_loader(file_path, self.max_opportunity)
-        self.uid_idx = list(self.user_result.keys())
-        self.num_user = len(self.uid_idx)
+        self.response_data = data_loader(file_path, self.max_opportunity)
+        self.num_user = len(self.response_data)
 
     def init(self):
         # initialize the learning curve: probability of getting it WRONG at each practice opportunity
@@ -38,7 +37,7 @@ class RunVanillaMLC(object):
             # solve for q
             z_matrix = np.zeros((self.num_user, self.num_component), float)
             for i in range(self.num_user):
-                z_matrix[i, :] = Z_assembly(self.user_result[self.uid_idx[i]], 
+                z_matrix[i, :] = Z_assembly(self.response_data[i], 
                                             self.learning_curve_matrix,
                                             self.mixture_density).reshape(self.num_component)
 
@@ -48,9 +47,9 @@ class RunVanillaMLC(object):
                     numerator = self.alpha - 1
                     denominator = self.alpha + self.beta - 2
                     for s in range(self.num_user):
-                        v_dict = self.user_result[self.uid_idx[s]]
-                        if (t+1) in v_dict:  #TODO: standardize practice sequence from 1..T
-                            numerator += v_dict[t+1]*z_matrix[s, j]
+                        response_list = self.response_data[s]
+                        if t < len(response_list):
+                            numerator += response_list[t]*z_matrix[s, j]
                             denominator += z_matrix[s, j]
                     self.learning_curve_matrix[t, j] = numerator/denominator
             # solve p_{t+1}
