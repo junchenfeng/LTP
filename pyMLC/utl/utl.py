@@ -6,7 +6,7 @@ def B(v, q):
         return 1-q
     else:
         return q
-    
+
 def L_assembly(response_dict, learning_curve, p):
     '''
     # Input:
@@ -18,8 +18,9 @@ def L_assembly(response_dict, learning_curve, p):
     if response_dict.keys()[0] != 1:
         raise ValueError('Practice time start code from 1.')
     l = math.log(p)
-    for j, v_j in response_dict.iteritems():
+    for j, v_j in response_dict.items():
         l += math.log(B(v_j, learning_curve[j-1]))  # j-1 because the times are coded from 1-N
+
     return l
 
 

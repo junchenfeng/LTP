@@ -13,7 +13,7 @@ class RunVanillaMLC(object):
     def load_param(self, num_component):
         # currently are all hard coded
         self.num_component = num_component
-        self.max_opportunity = 5  # only calibrate for the first K practice opportunities 
+        self.max_opportunity = 5  # only calibrate for the first K practice opportunities
         # no bayesian thrinkage at the moment
         self.alpha = 1
         self.beta = 1
@@ -21,9 +21,9 @@ class RunVanillaMLC(object):
         self.stop_threshold = 0.001
         self.max_iteration = 10
 
-    def load_data(self, file_path): 
+    def load_data(self, file_path):
         self.user_result = data_loader(file_path, self.max_opportunity)
-        self.uid_idx = self.user_result.keys()
+        self.uid_idx = list(self.user_result.keys())
         self.num_user = len(self.uid_idx)
 
     def init(self):
@@ -32,7 +32,7 @@ class RunVanillaMLC(object):
         # initialize the mixture density
         mixture_density_raw = [random.random()] * self.num_component
         self.mixture_density = [x/sum(mixture_density_raw) for x in mixture_density_raw]
-    
+
     def solve_EM(self):
         stop_condition = False
         iteration_num = 1
@@ -69,4 +69,5 @@ class RunVanillaMLC(object):
             if l2_norm_diff < self.stop_threshold or iteration_num >= self.max_iteration:
                 stop_condition = True
             # prepare for the next iteration 
+
             last_learning_curve_matrix = np.array(self.learning_curve_matrix)
