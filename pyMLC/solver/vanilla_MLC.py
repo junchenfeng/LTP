@@ -1,13 +1,10 @@
 import numpy as np
-import random
-import math
-
 import os, sys
 proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, proj_dir)
 
 from utl.IO import data_loader
-from utl.utl import L_assembly
+from utl.utl import Z_assembly
 
 class RunVanillaMLC(object):
     def load_param(self, num_component):
@@ -28,10 +25,10 @@ class RunVanillaMLC(object):
 
     def init(self):
         # initialize the learning curve: probability of getting it WRONG at each practice opportunity
-        self.learning_curve_matrix = np.random.uniform(0, 1, (self.num_component, self.max_opportunity))
+        self.learning_curve_matrix = np.random.uniform(0, 1, (self.max_opportunity, self.num_component))
         # initialize the mixture density
-        mixture_density_raw = [random.random()] * self.num_component
-        self.mixture_density = [x/sum(mixture_density_raw) for x in mixture_density_raw]
+        mixture_density_raw = np.random.uniform(0, 1, (self.num_component, 1))
+        self.mixture_density = mixture_density_raw/mixture_density_raw.sum()
 
     def solve_EM(self):
         stop_condition = False
@@ -39,28 +36,24 @@ class RunVanillaMLC(object):
         last_learning_curve_matrix = np.array(self.learning_curve_matrix)
         while not stop_condition:
             # solve for q
-            # compute L, L is num_user*num_component
-            L_matrix = np.zeros((self.num_user, self.num_component), float)
-            for j in range(self.num_component):
-                q_j_vec = self.learning_curve_matrix[j]
-                pj = self.mixture_density[j]
-                for s in range(self.num_user):
-                    v_dict = self.user_result[self.uid_idx[s]]
-                    L_matrix[s, j] = math.exp(L_assembly(v_dict, q_j_vec, pj))
-            # compute z
-            z_matrix = L_matrix/L_matrix.sum(axis=1, keepdims=True)
-            # compute q_{+1}
+            z_matrix = np.zeros((self.num_user, self.num_component), float)
+            for i in range(self.num_user):
+                z_matrix[i, :] = Z_assembly(self.user_result[self.uid_idx[i]], 
+                                            self.learning_curve_matrix,
+                                            self.mixture_density).reshape(self.num_component)
+
+            # solve q_{t+1}
             for j in range(self.num_component):
                 for t in range(self.max_opportunity):
                     numerator = self.alpha - 1
                     denominator = self.alpha + self.beta - 2
                     for s in range(self.num_user):
                         v_dict = self.user_result[self.uid_idx[s]]
-                        if (t+1) in v_dict:
+                        if (t+1) in v_dict:  #TODO: standardize practice sequence from 1..T
                             numerator += v_dict[t+1]*z_matrix[s, j]
                             denominator += z_matrix[s, j]
-                    self.learning_curve_matrix[j, t] = numerator/denominator
-            # solve for p
+                    self.learning_curve_matrix[t, j] = numerator/denominator
+            # solve p_{t+1}
             self.mixture_density = z_matrix.sum(axis=0)/z_matrix.sum()
 
             # check stop condition
@@ -68,6 +61,6 @@ class RunVanillaMLC(object):
             iteration_num += 1
             if l2_norm_diff < self.stop_threshold or iteration_num >= self.max_iteration:
                 stop_condition = True
-            # prepare for the next iteration 
 
+            # prepare for the next iteration
             last_learning_curve_matrix = np.array(self.learning_curve_matrix)
