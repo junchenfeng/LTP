@@ -22,7 +22,7 @@ test_instance.init()
 # solve
 test_instance.solve_EM()
 # print result
-print([0.2,0.4,0.6,0.8,0.9])  # truth
+print([0.2, 0.4, 0.6, 0.8, 0.9])  # truth
 print(test_instance.learning_curve_matrix[0])  # estimated
 
 '''
@@ -36,10 +36,10 @@ test_instance.init()
 # solve
 test_instance.solve_EM()
 # print result
-print([0.2,0.4,0.6,0.8,0.9],[0,8,0.8,0.8,0.8,0.8])  # truth
+print([0.2, 0.4, 0.6, 0.8, 0.9], [0.8, 0.8, 0.8, 0.8, 0.8])  # truth
 print(test_instance.learning_curve_matrix)  # estimated
 
-print([0.8,0.2])  # truth
+print([0.8, 0.2])  # truth
 print(test_instance.mixture_density)  # estimated
 
 

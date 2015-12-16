@@ -2,7 +2,8 @@ def data_loader(file_path, max_opportunity):
     '''
     The data is comma delimited file with the following field
     user_id:
-    practice_times: time index of the practice opportunities. 1->N means the 1st, 2nd, ..., nth practice opportunity
+    practice_times: time index of the practice opportunities.
+    1->N means the 1st, 2nd, ..., nth practice opportunity
     result: binary, 1 = right response
     '''
     # load the dat
