@@ -18,49 +18,41 @@ test_instance = RunVanillaMLC()
 single component test
 '''
 # initialize
-test_instance.load_param(1)
-test_instance.load_data(single_component_incom_data_path)
-# initialize
-test_instance.init()
+test_instance.init(1)
+test_instance.load_data(single_component_data_path)
 # solve
-test_instance.solve_EM()
+res = test_instance.solve()
 # print result
 print([0.2, 0.4, 0.6, 0.8, 0.9])  # truth
-print(test_instance.learning_curve_matrix)  # estimated
+print(res['q'])  # estimated
 
-# compare the performa=`=jedi=0, nce=`= (response_lists, *_*learning_curve_matrix*_*, prior_mixture_density=None) =`=jedi=`=
+# compare the performance
 print(get_predict_performance(test_instance.response_data, 
-                              test_instance.learning_curve_matrix,
-                              test_instance.mixture_density))
+                              res['q'],
+                              res['p']))
 
 
 '''
 double component test
 '''
 # initialize
-test_instance.load_param(2)
-test_instance.load_data(double_component_incom_data_path)
-# initialize
-test_instance.init()
+test_instance.init(2)
+test_instance.load_data(double_component_data_path)
 # solve
-test_instance.solve_EM()
+res = test_instance.solve()
 # print result
 true_param = np.array([[0.2, 0.4, 0.6, 0.8, 0.9], [0.8, 0.8, 0.8, 0.8, 0.8]]).reshape(2,5)
 true_mixture = np.array([0.8, 0.2]).reshape(1,2)
+
+learning_curve_matrix = res['q']
+mixture_density = res['p']
 print(true_param)  # truth
-print(test_instance.learning_curve_matrix)  # estimated
+print(learning_curve_matrix)  # estimated
 
 print(true_mixture)  # truth
-print(test_instance.mixture_density)  # estimated
+print(mixture_density)  # estimated
 
 print('estimated rate')
 
 print(np.dot(true_mixture, true_param))
-print(np.dot(test_instance.learning_curve_matrix, test_instance.mixture_density))
-
-
-print('forecast fitness')
-print(get_predict_performance(test_instance.response_data, 
-                              test_instance.learning_curve_matrix,
-                              test_instance.mixture_density))
-
+print(np.dot(learning_curve_matrix, mixture_density))
