@@ -4,7 +4,6 @@ sys.path.insert(0, proj_dir)
 
 import numpy as np
 
-
 from utl.utl import update_mixture_density, predict_response
 
 def forecast_spell_performance(response_list, learning_curve_matrix, prior_mixture_density=None):
@@ -15,7 +14,7 @@ def forecast_spell_performance(response_list, learning_curve_matrix, prior_mixtu
     (2) learning_curve_matrix: learning curves, T*J
     (3) prior_mixture_density: the prior guess of the user type, J*1, sum to 1
     '''
-    
+
     T, J = learning_curve_matrix.shape
 
     if prior_mixture_density is None:
@@ -37,6 +36,7 @@ def forecast_spell_performance(response_list, learning_curve_matrix, prior_mixtu
     return Yhats
 
 
+
 def get_predict_performance(response_lists, learning_curve_matrix, prior_mixture_density=None):
 
     max_T = max([len(x) for x in response_lists])
@@ -52,9 +52,12 @@ def get_predict_performance(response_lists, learning_curve_matrix, prior_mixture
     return forecast_tabs[:,0]/forecast_tabs[:,1]
 
 
+def get_predict(response_lists, learning_curve_matrix, prior_mixture_density=None):
+    p_all = []
+    y_all = []
+    for response_list in response_lists:
+        yHats = forecast_spell_performance(response_list, learning_curve_matrix, prior_mixture_density)
+        p_all += yHats
+        y_all += response_list
 
-
-
-
-
-    
+    return y_all,p_all

@@ -16,7 +16,7 @@ def L_assembly(response_list, learning_curve, p):
     '''
     l = math.log(p)
     for j in range(len(response_list)):
-        l += math.log(B(response_list[j], learning_curve[j]))  
+        l += math.log(B(response_list[j], learning_curve[j]))
     return l
 
 
@@ -73,9 +73,10 @@ def predict_response(learning_curve_matrix, mixture_density, t):
     (2) mixture_density, K*1
     (3) t, the time of practice, from 1..T
     '''
-    if t > learning_curve_matrix.shape[0]+1:
+    s = t+1
+    if s > learning_curve_matrix.shape[0]:
         raise ValueError('Exceeds the model specification.')
-    return np.dot(learning_curve_matrix[t-1,:].T, mixture_density)
+    return np.dot(learning_curve_matrix[s-1,:].T, mixture_density)
 
 
 def predict_delta_response(learning_curve_matrix, mixture_density, t):
