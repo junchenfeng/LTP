@@ -1,5 +1,8 @@
 import numpy as np
 import os, sys
+import gevent
+from gevent import monkey;gevent.monkey.patch_all();
+
 proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, proj_dir)
 
@@ -33,10 +36,9 @@ class RunVanillaMLC(object):
         # The initial density does not predict convergence, thus the trick is
         # just try enough combinations
 
-        res_list = []
-        for i in range(self.m):
-            res = self._solve_EM()
-            res_list.append(res)
+        jobs = [gevent.spawn(self._solve_EM) for i in range(self.m)]
+        gevent.joinall(jobs)
+        res_list = [job.value for job in jobs]
 
         # compute the l2 norm, and choose the largest one
         q_norm_diff = [np.linalg.norm(res_list[x]['q']) for x in range(self.m)]
@@ -45,31 +47,31 @@ class RunVanillaMLC(object):
 
     def _solve_EM(self):
         '''
-        # Input: 
+        # Input:
         (1) mixture density: prior guess of the component mixture, J*1
-        
+
         # Output:
         (1) learning curve matrix: T*J
         (2) Posterior mixture density: J*1
-        
+
         '''
-        stop_condition = False
+        is_converged = False
         iteration_num = 1
 
-        mixture_density = np.random.uniform(0, 1, (self.K, 1))
+        mixture_density = np.random.uniform(0, 1, self.K)
         mixture_density = mixture_density/mixture_density.sum()
 
         # TODO: does impose monotone constraints help?
         learning_curve_matrix = np.random.uniform(0, 1, (self.max_opportunity, self.K))
-        last_learning_curve_matrix = np.array(learning_curve_matrix)  # TODO: change it into shallow copy or what not
-        
-        while not stop_condition:
+        last_learning_curve_matrix = learning_curve_matrix
+
+        while True:
             # solve for q
-            z_matrix = np.zeros((self.num_user, self.K), float)
+            z_matrix = np.zeros((self.num_user, self.K))
             for i in range(self.num_user):
-                z_matrix[i, :] = Z_assembly(self.response_data[i], 
+                z_matrix[i, :] = Z_assembly(self.response_data[i],
                                             learning_curve_matrix,
-                                            mixture_density).reshape(self.K)
+                                            mixture_density)
 
             # solve q_{t+1}
             for j in range(self.K):
@@ -86,19 +88,19 @@ class RunVanillaMLC(object):
             mixture_density = z_matrix.sum(axis=0)/z_matrix.sum()
 
             # check stop condition
-            l2_norm_diff = np.linalg.norm(learning_curve_matrix-last_learning_curve_matrix)
             iteration_num += 1
-            if l2_norm_diff < self.stop_threshold:
-                stop_condition = True
-                is_converged = True  # currently no use
 
             if iteration_num >= self.max_iteration:
-                stop_condition = True
-                is_converged = False
+                break
+
+            l2_norm_diff = np.linalg.norm(learning_curve_matrix-last_learning_curve_matrix)
+            if l2_norm_diff < self.stop_threshold:
+                is_converged = True  # currently no use
+                break
 
             # prepare for the next iteration
-            last_learning_curve_matrix = np.array(learning_curve_matrix)
+            last_learning_curve_matrix = learning_curve_matrix
 
         return {'q':learning_curve_matrix, 'p':mixture_density, 'flag':is_converged}
 
-        
+

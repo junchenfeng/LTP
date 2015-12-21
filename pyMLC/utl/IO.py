@@ -26,7 +26,7 @@ def data_loader(file_path, max_opportunity):
 
     # run a second time
     response_data = []
-    for user_log in user_result.itervalues():
+    for user_log in user_result.values():
         user_response = [user_log[x] for x in sorted(user_log.keys())]
         response_data.append(user_response)
 

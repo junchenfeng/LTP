@@ -16,7 +16,7 @@ def L_assembly(response_list, learning_curve, p):
     '''
     l = math.log(p)
     for j in range(len(response_list)):
-        l += math.log(B(response_list[j], learning_curve[j]))  
+        l += math.log(B(response_list[j], learning_curve[j]))
     return l
 
 
@@ -37,7 +37,7 @@ def Z_assembly(response_list, learning_curve_matrix, mixture_density):
     if J != J1:
         raise ValueError('Mixture density and learning curve matrix have different lengths.')
 
-    ls = np.zeros((J, 1))
+    ls = np.zeros(J)
     for j in range(J):
         ls[j] = np.exp(L_assembly(response_list, learning_curve_matrix[:, j], mixture_density[j]))
 
@@ -52,15 +52,15 @@ def update_mixture_density(response_lists, learning_curve_matrix, mixture_densit
     # Input:
     (1) response_lists: [[Y1,Y2,...,Yt],[]] where t is the number of practice opportunity and Yt 0/1 is the binary responses
     (2) learning curve matrix: T*K array, where T is the largest practice opportunity
-    (3) mixture density: K*1 array, where K is the number of learning curves
+    (3) mixture density: J*1 array, where J is the number of learning curves
     all inputs are numpy array
     '''
     # input checks are done at the Z_assembly level
     N = len(response_lists)
     J = mixture_density.shape[0]
-    z = np.zeros((J, N))
+    z = np.zeros((J, N), order='F')
     for i in range(N):
-        z[:,i] = Z_assembly(response_lists[i], learning_curve_matrix, mixture_density).reshape(J)
+        z[:,i] = Z_assembly(response_lists[i], learning_curve_matrix, mixture_density)
 
     return z.sum(axis=1)/z.sum()
 
@@ -73,9 +73,9 @@ def predict_response(learning_curve_matrix, mixture_density, t):
     (2) mixture_density, K*1
     (3) t, the time of practice, from 1..T
     '''
-    if t > learning_curve_matrix.shape[0]+1:
+    if t > learning_curve_matrix.shape[0]-1:
         raise ValueError('Exceeds the model specification.')
-    return np.dot(learning_curve_matrix[t-1,:].T, mixture_density)
+    return np.dot(learning_curve_matrix[t,:].T, mixture_density)
 
 
 def predict_delta_response(learning_curve_matrix, mixture_density, t):
