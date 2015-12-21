@@ -18,7 +18,7 @@ def forecast_spell_performance(response_list, learning_curve_matrix, prior_mixtu
     T, J = learning_curve_matrix.shape
 
     if prior_mixture_density is None:
-        mixture_density = np.ones((J, 1))/J
+        mixture_density = np.ones(J)/J
     else:
         mixture_density = prior_mixture_density
 
