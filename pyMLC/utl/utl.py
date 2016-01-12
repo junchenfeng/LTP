@@ -20,31 +20,44 @@ def L_assembly(response_list, learning_curve, p):
     return l
 
 
-def Z_assembly(response_list, learning_curve_matrix, mixture_density):
-    '''
+# def Z_assembly(response_list, learning_curve_matrix, mixture_density):
+    # '''
     # Input:
-    (1) [Y1,Y2, ..., Yt] where t is the number of practice opportunity and Yt 0/1
-    (2) learning curve matrix: T*j array, where T is the largest practice opportunity
-    (3) response_list: {t:Y} where t is the number of practice opportunity and Y 0/1 is the binary responses
+    # (1) [Y1,Y2, ..., Yt] where t is the number of practice opportunity and Yt 0/1
+    # (2) learning curve matrix: T*j array, where T is the largest practice opportunity
+    # (3) response_list: {t:Y} where t is the number of practice opportunity and Y 0/1 is the binary responses
 
-    all inputs are numpy array
+    # all inputs are numpy array
 
     # Output
-    level z
-    '''
-    J = mixture_density.shape[0]
-    T, J1 = learning_curve_matrix.shape
-    if J != J1:
-        raise ValueError('Mixture density and learning curve matrix have different lengths.')
+    # level z
+    # '''
+    # J = mixture_density.shape[0]
+    # T, J1 = learning_curve_matrix.shape
+    # if J != J1:
+        # raise ValueError('Mixture density and learning curve matrix have different lengths.')
 
-    ls = np.zeros(J)
-    for j in range(J):
-        ls[j] = np.exp(L_assembly(response_list, learning_curve_matrix[:, j], mixture_density[j]))
+    # ls = np.zeros(J)
+    # for j in range(J):
+        # ls[j] = np.exp(L_assembly(response_list, learning_curve_matrix[:, j], mixture_density[j]))
 
-    z = ls/ls.sum()
+    # z = ls/ls.sum()
 
-    return z
+    # return z
 
+def Z_assembly(response_list, learning_curve_matrix, mixture_density):
+    M = len(response_list)
+    N = len(mixture_density)
+    
+    respM = np.array(response_list).reshape((M, 1)).repeat(N, axis=1)
+    lc = learning_curve_matrix[:M, :]
+    
+    respM_c = 1 - respM
+    lc_c = 1 - lc
+    
+    logPosterior  = np.sum( np.log( np.multiply(respM, lc) + np.multiply(respM_c, lc_c) ), axis = 0) + np.log(mixture_density)
+    posterior = np.exp(logPosterior)
+    return posterior/posterior.sum()
 
 
 def update_mixture_density(response_lists, learning_curve_matrix, mixture_density):
@@ -75,14 +88,14 @@ def predict_response(learning_curve_matrix, mixture_density, t):
     '''
     if t > learning_curve_matrix.shape[0]-1:
         raise ValueError('Exceeds the model specification.')
-    return np.dot(learning_curve_matrix[t,:].T, mixture_density)
+    return np.dot(learning_curve_matrix[t,:], mixture_density)
 
 
 def predict_delta_response(learning_curve_matrix, mixture_density, t):
     if t > learning_curve_matrix.shape[0]:
         raise ValueError('Exceeds the model specification.')
     delta_learning_curve = learning_curve_matrix[t,:]-learning_curve_matrix[t-1,:]
-    return np.dot(delta_learning_curve.T, mixture_density)
+    return np.dot(delta_learning_curve, mixture_density)
 
 
 
