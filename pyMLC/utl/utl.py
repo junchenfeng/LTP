@@ -98,5 +98,13 @@ def predict_delta_response(learning_curve_matrix, mixture_density, t):
     return np.dot(delta_learning_curve, mixture_density)
 
 
+def list2array(lst, M, N):
+    result = np.zeros((N, M), dtype=np.int8, order='F')
+    mask = np.copy(result, order='F')
+    for j, col in enumerate(lst):
+        for i, val in enumerate(col):
+            result[i][j] = val
+            mask[i][j] = 1
+    return result, mask
 
 
