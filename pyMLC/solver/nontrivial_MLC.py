@@ -63,8 +63,8 @@ class RunNontrivialMLC(object):
 
         # TODO: does impose monotone constraints help?
         learning_curve_matrix = np.random.uniform(0, 1, (self.max_opportunity, self.K))
-        last_learning_curve_matrix = learning_curve_matrix
-        
+        last_learning_curve_matrix = np.array(learning_curve_matrix)
+
         padding_resp, bool_resp = list2array(self.response_data, self.num_user, self.max_opportunity)
 
         while True:
@@ -91,6 +91,12 @@ class RunNontrivialMLC(object):
             # solve p_{t+1}
             mixture_density = z_matrix.sum(axis=0)/z_matrix.sum()
 
+            # sort learning_curve_matrix and corresponding mixture_density
+            criteria = learning_curve_matrix[-1,:] -  learning_curve_matrix[0,:]
+            order = sorted(list(range(self.K)),key=lambda i:criteria[i], reverse=True)
+            learning_curve_matrix = learning_curve_matrix[:,order]
+            mixture_density = mixture_density[order]
+
             # check stop condition
             iteration_num += 1
 
@@ -103,7 +109,7 @@ class RunNontrivialMLC(object):
                 break
 
             # prepare for the next iteration
-            last_learning_curve_matrix = learning_curve_matrix
+            last_learning_curve_matrix = np.array(learning_curve_matrix)
 
         return {'q':learning_curve_matrix, 'p':mixture_density, 'flag':is_converged}
 
