@@ -1,0 +1,48 @@
+---
+title: "Mixture Learning Curve with Survival Selection"
+author: "Junchen Feng"
+date: "Thursday, April 28, 2016"
+header-includes:
+   - \usepackage{setspace}
+   - \doublespacing
+output: pdf_document
+---
+
+# I.Introduction
+Learning curve is one of key concepts in learning analytics. Explicitly, it describes the relationship between error rate and number of practice. Implicitly, it models the dynamics of mastering a latent skill in the class of task where practice makes perfect (PMP task). The basic training for many disciplines are PMP task, including but not limited to elementary math, beginner lanaguage learning and basic computer science. In principle, PMP task can extend to all repetive tasks that aim for muscle memory.
+
+The key decision for PMP learning task is the stop condition. One can either stop when no progress can be expected or when the expected success rate is achieved. The former stop condition requires the knowledge of the slope of the learning curve while the later requires that of the level of the learning curve. Therefore, it is crucial to identify the learning curve of the PMP task.
+
+# II.Literature Review
+The seminal study of learning curve conducted by Colbert and Anderson **Citation** gave birth to the popular Bayesian Knowedge Tracing model (BKT). BKT assumes that the learning curve is an exponetial function, allowing for guess and slippage as measure error.
+
+The BKT model inspired a family of latent models that is a variation of the Hidden Markov Model(HMM) where the dynamics of the latent mastery is described by a parametric model. Notably.
+
+Matthew Streeter(2015) proposes a non-parametric model that does not make any strong parametric assumption, which he termed as mixture learning curve model (MLC). Matthew has shown that the BKT family is a special case of MLC and thus the performance of MLC is weakly stronger than the BKT family, when the number of componenent is correctly specified. He also reports that the MLC applied in Duolingo has out performed the BKT family. Although Matthew Streeter provides the pesudo-code for the discrete version of the MLC, he leaves out key step to pin down a unique set of mixture parameters. As the model current stands, it is not uniquely identified and thus suffers from stability problem.
+
+In addition, both BKT family and MLC model assumes that user composition is homogeneous for all support of practice numbers. If different type of learners has different hazard rate, both BKT and MLC estimates will be biased. No solution is current avaiable at hand.
+
+
+# III.Parameter Identifcation of Mixture Learning Curve Model
+The key feature of MLC model is that it foregos explicit measures of latent knowledge mastery. Instead, it uses error rate as a proxy of mastery and describes the learner status with an error rate profile. 
+
+MLC models assumes there are N different learning curve, each describing a relationship of error rate and practice opportunties. Users is described as a mixture of such learning curve, whose weights sum to 1. 
+
+Without extra constraints on the learning curve and mixture weight, the MLC is not uniquely identified.
+
+One intuitive solution is always maximizes l2 norm of learning curves so that the model has the strongest power to differentiate learner type.
+
+# IV.Mixture Learning Curve Model with Survival Selection Process
+Unless all learners did the same number of practices, there is a selection process. The difficult part is really to understand where the selection biases to. It could be good students stop practices after a few easy win because they are bored, or low ability students stop practices after a few wrongs because they are frustrated. The analysis of the user engagement of PMP task suggests that the later hypothesis is more likely to be true.
+
+# V.Performance Comparison
+
+BKT family and MLC family are fitted on two data sets from 17zuoye. One for math and one for english.
+
+
+# VI. Future Research
+Learning curve can be used to generate learning task recommendation that optimize the learning proficiency.
+
+
+
+# Reference
