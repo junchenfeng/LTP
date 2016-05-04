@@ -11,8 +11,8 @@ learn_rate = 0.2
 
 
 # sim parameters
-N = 100
-T = 5
+N = 1000
+T = 10
 
 log_data = []
 for i in range(N):
@@ -21,6 +21,7 @@ for i in range(N):
 	for t in range(1,T+1):
 		# impute user log
 		p = compute_success_rate(guess, slip, mastery)
+		#print mastery,p
 		Y = int(p>random(1)[0])
 		# update mastery
 		mastery = update_mastery(mastery, learn_rate)

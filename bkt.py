@@ -1,3 +1,5 @@
+# encoding:utf-8
+
 import numpy as np
 from collections import defaultdict
 import os
@@ -72,12 +74,12 @@ def data_grad(log_data, params):
 
 	log_grad = np.zeros((3,1),order='F')
 	for log in log_data:
-		k = log[0]
-		Y = log[1]
+		Y = log[0]
+		t = log[1]
 		n = log[2]
-		g = grad(c,A,beta,k)		
-		p = llk(c,A,beta,k)
-		log_grad += (Y*g/p + (1-Y)*(-g)/(1-p))*n
+		g = grad(c,A,beta,t)		
+		p = llk(c,A,beta,t)
+		log_grad += (Y/p - (1-Y)/(1-p))*n*g
 		
 	return -log_grad
 
@@ -100,9 +102,17 @@ if __name__ == '__main__':
 	
 	#x0 = np.array([0.8, 0.3,-np.log(0.9)], order='F')
 	x0 = [0.8, 0.3, -np.log(0.9)]
+	x =  [0.9, 0.45,-np.log(0.8)]
+	#xc = [0.90001,0.45,-np.log(0.8)]
+	#xa = [0.9,0.45001,-np.log(0.8)]
+	#xb = [0.9,0.45,-np.log(0.8)+0.00001]
+	#test1 = [(llk(xc[0],xc[1],xc[2],2)-llk(x[0],x[1],x[2],2))/0.00001,(llk(xa[0],xa[1],xa[2],2)-llk(x[0],x[1],x[2],2))/0.00001,(llk(xb[0],xb[1],xb[2],2)-llk(x[0],x[1],x[2],2))/0.00001]
+	#test2= [grad(x[0],x[1],x[2],2)]
+	#test=[(data_llk(short_log,xc)-data_llk(short_log,x))/0.00001, (data_llk(short_log,xa)-data_llk(short_log,x))/0.00001, (data_llk(short_log,xb)-data_llk(short_log,x))/0.00001]
+		
 	bnds = [(0.55,0.95),(0.05,0.95),(-np.log(0.95),-np.log(0.05))]  # the bnds are not strict
 	# start with slip=guess=0.2, learn rate=0.1, init_mastery = 0.5
 	res = minimize(target_fnc, x0, method='L-BFGS-B', jac=target_grad, bounds=bnds)
 	
-	ipdb.set_trace()
+	print res.x
 	# the right estimation is [0.9, 0.45，0.223]
