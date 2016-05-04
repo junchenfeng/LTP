@@ -26,8 +26,8 @@ for i in range(N):
 		# update mastery
 		mastery = update_mastery(mastery, learn_rate)
 		
-		log_data.append((Y,t)) 
+		log_data.append((i,t,Y)) 
 		
 with open(proj_dir + '/data/bkt/test/single_sim.txt','w') as f:
 	for log in log_data:
-		f.write('%d,%d\n' % log)
+		f.write('%d,%d,%d\n' % log)

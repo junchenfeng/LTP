@@ -19,13 +19,13 @@ def compute_success_rate(guess, slip, mastery):
 	
 # etl func
 def collapse_log(long_log):
-	# long log (Y,t) -> short_log (Y/N,t,0)
+	# long log (i,t,Y) -> short_log (Y/N,t,0)
 	# reduce runtime in estimation
 	if not long_log:
 		raise ValueError('log is empty')
 	log_dict = {1:defaultdict(int),0:defaultdict(int)}
 	for log in long_log:
-		log_dict[log[0]][log[1]] += 1
+		log_dict[log[2]][log[1]] += 1
 	
 	short_log = []
 	for ans, t_cnter in log_dict.items():
@@ -83,7 +83,22 @@ def data_grad(log_data, params):
 		
 	return -log_grad
 
-
+def reconstruct_bkt_parameter(c,A,beta,init_mastery):
+	slip = 1-c
+	learn_rate = 1-np.exp(-beta)
+	guess = 1-slip-A/(1-init_mastery)
+	return slip,guess,learn_rate
+	
+# Bayesian Knowledge Tracing Algorithm
+def forward_update_mastery(mastery, guess, slip, learn_rate, Y):
+	if Y ==1:
+		new_mastery = 1 - (1-learn_rate)*(1-mastery)*guess/(guess+(1-slip-guess)*mastery)
+	elif Y==0:
+		new_mastery = 1 - (1-learn_rate)*(1-mastery)*(1-guess)/(1-guess-(1-slip-guess)*mastery)
+	else:
+		raise ValueError('Invalid response value.')
+	return new_mastery
+	
 
 if __name__ == '__main__':
 	# etl
@@ -92,20 +107,19 @@ if __name__ == '__main__':
 		for line in f:
 			if not line.strip():
 				continue
-			ans, t = line.strip().split(',')
-			log_data.append((int(ans),int(t)))
+			i,t,Y = line.strip().split(',')
+			log_data.append((int(i),int(t),int(Y)))
 	
 	short_log = collapse_log(log_data)
 	
 	target_fnc = lambda params: data_llk(short_log, params)
 	target_grad = lambda params: data_grad(short_log, params)
 	
-	#x0 = np.array([0.8, 0.3,-np.log(0.9)], order='F')
-	x0 = [0.8, 0.3, -np.log(0.9)]
-	x =  [0.9, 0.45,-np.log(0.8)]
-	#xc = [0.90001,0.45,-np.log(0.8)]
-	#xa = [0.9,0.45001,-np.log(0.8)]
-	#xb = [0.9,0.45,-np.log(0.8)+0.00001]
+	x0 = [0.8, 0.45, -np.log(0.9)]
+	x =  [0.9, 0.3,-np.log(0.8)]
+	#xc = [0.90001,0.3,-np.log(0.8)]
+	#xa = [0.9,0.3001,-np.log(0.8)]
+	#xb = [0.9,0.3,-np.log(0.8)+0.00001]
 	#test1 = [(llk(xc[0],xc[1],xc[2],2)-llk(x[0],x[1],x[2],2))/0.00001,(llk(xa[0],xa[1],xa[2],2)-llk(x[0],x[1],x[2],2))/0.00001,(llk(xb[0],xb[1],xb[2],2)-llk(x[0],x[1],x[2],2))/0.00001]
 	#test2= [grad(x[0],x[1],x[2],2)]
 	#test=[(data_llk(short_log,xc)-data_llk(short_log,x))/0.00001, (data_llk(short_log,xa)-data_llk(short_log,x))/0.00001, (data_llk(short_log,xb)-data_llk(short_log,x))/0.00001]
@@ -113,6 +127,32 @@ if __name__ == '__main__':
 	bnds = [(0.55,0.95),(0.05,0.95),(-np.log(0.95),-np.log(0.05))]  # the bnds are not strict
 	# start with slip=guess=0.2, learn rate=0.1, init_mastery = 0.5
 	res = minimize(target_fnc, x0, method='L-BFGS-B', jac=target_grad, bounds=bnds)
-	
-	print res.x
 	# the right estimation is [0.9, 0.45，0.223]
+	
+	init_mastery = 0.5  # prior
+	slip,guess,learn_rate = reconstruct_bkt_parameter(res.x[0],res.x[1],res.x[2], init_mastery)
+	#init_mastery = 0.6  # prior
+	#slip,guess,learn_rate = reconstruct_bkt_parameter(x[0], x[1], x[2], init_mastery)
+	
+	#now predict the sequence
+	pred_log = []
+	for log in log_data:
+		Y = log[2]
+		t = log[1]
+		if t == 1:
+			mastery = init_mastery
+		else:
+			# append pred_log, prob is retained from the last iteration
+			pred_log.append((Y,prob))
+		
+		mastery = forward_update_mastery(mastery, guess, slip, learn_rate, Y)		
+		prob = compute_success_rate(guess, slip, mastery)
+	
+	# compute auc
+	from sklearn import metrics
+	y_true = np.array([x[0] for x in pred_log])
+	y_pred = np.array([x[1] for x in pred_log])
+	
+	fpr,tpr,thresholds = metrics.roc_curve(y_true,y_pred)
+	auc = metrics.auc(fpr, tpr)
+	print auc

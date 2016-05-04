@@ -10,10 +10,10 @@ from utl.IO import data_loader
 from utl.utl import Z_assembly
 
 class RunVanillaMLC(object):
-    def init(self, K):
+    def init(self, K, max_t = 5):
         # currently are all hard coded
         self.K = K
-        self.max_opportunity = 5  # only calibrate for the first K practice opportunities
+        self.max_opportunity = max_t  # only calibrate for the first K practice opportunities
         if self.K == 1:
             self.m = 1
         else:
