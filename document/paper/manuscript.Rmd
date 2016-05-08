@@ -4,6 +4,8 @@ author: "Junchen Feng"
 date: "Thursday, April 28, 2016"
 header-includes:
    - \usepackage{setspace}
+   - \usepackage{amsmath}
+   - \usepackage{amssymb}
    - \doublespacing
 output: pdf_document
 ---
@@ -23,22 +25,58 @@ Matthew Streeter(2015) proposes a non-parametric model that does not make any st
 In addition, both BKT family and MLC model assumes that user composition is homogeneous for all support of practice numbers. If different type of learners has different hazard rate, both BKT and MLC estimates will be biased. No solution is current avaiable at hand.
 
 
-# III.Parameter Identifcation of Mixture Learning Curve Model
+# III.Parameter Identifcation 
+
+## Bayesian Knowledge Tracing Model
+Following Van De Sande(2013)'s formulation, cannoical bayesian knowledge tracing(bkt) model can be written as 
+
+$$
+P(C_t) = c - Ae^{-\beta t}
+$$
+
+$P(C_t)$ is the probability of a correct answer at practice period t. $C=1-P(S)$ where $P(S)$ is the slippage probability. $A=(1-P(S)-P(G))*(1-P(L_0)$  where $P(G)$ is the guess probability, $P(L_0)$ is the initial latent mastery. $\beta = -log(1-P(T))$ where $P(T)$ is the learn rate. 
+
+Such specification cannot identify $P(G)$ and $P(L_0)$. In addition, Because $\beta$ dominates the gradient vector, $P(S)$ and ($P(G)$, $P(L_0)$) is stably identified.
+
+
+
+## Mixture Learning Curve Model
+
 The key feature of MLC model is that it foregos explicit measures of latent knowledge mastery. Instead, it uses error rate as a proxy of mastery and describes the learner status with an error rate profile. 
 
 MLC models assumes there are N different learning curve, each describing a relationship of error rate and practice opportunties. Users is described as a mixture of such learning curve, whose weights sum to 1. 
 
-Without extra constraints on the learning curve and mixture weight, the MLC is not uniquely identified.
 
-One intuitive solution is always maximizes l2 norm of learning curves so that the model has the strongest power to differentiate learner type.
+The log likelihood function for the observed data is 
+$$
+\mathcal{L} = \sum_{s}\{log[\sum_{j}p_j\prod_{t}\mathcal{B}(q_t^j, v_t)]\}
+$$
 
-# IV.Mixture Learning Curve Model with Survival Selection Process
-Unless all learners did the same number of practices, there is a selection process. The difficult part is really to understand where the selection biases to. It could be good students stop practices after a few easy win because they are bored, or low ability students stop practices after a few wrongs because they are frustrated. The analysis of the user engagement of PMP task suggests that the later hypothesis is more likely to be true.
+$p_j$ is user profile's mixture weight. $q_t^j$ is probability of correct answer at practice opportunity $t$ for $j^{th}$ learning curve, and $v_t$ is the response at practice opportunity $t$. $\mathcal{B}(*,*)$ is the Bernoulli distribution. 
+
+To increase stability of the estimation, Streeter(2015) suggests to shrink the estimated $\mathcal{B}(*,*)$ toward a beta prior. The $p_j$ is initialized as equal weight and $q_t^j$ as uniform random variable between (0,1).  
+
+The current model specification, with $nt$ actual data points, there are $k(n+1)t$ parameters to be estimated. without extra constraints on the learning curve and mixture weight, the MLC is not uniquely identified.   The current routine estimates five separate models and chooses the parameter set that maximizes l2 norm of learning curves so that the model has the strongest power to differentiate learner type. 
+
+
 
 # V.Performance Comparison
 
-BKT family and MLC family are fitted on two data sets from 17zuoye. One for math and one for english.
+For practical purpose, parameter identification is less useful than outsample prediction. Therefore, the performance metrics of interest is Area Under Curve(AUC). The performance is compared with both simulated data whose dgp is known and field data whose dgp is unknown.
 
+## 5.1 Simulation
+
+### 5.1.1 Single Component that complies with BKT DGP
+
+### 5.1.2 Single Component that does not comply with BKT DGP
+
+### 5.1.3 Two Component Mxiture
+
+## 5.2 Field Data
+
+## 5.2.1 English Data
+
+## 5.2.2 Math Data
 
 # VI. Future Research
 Learning curve can be used to generate learning task recommendation that optimize the learning proficiency.
