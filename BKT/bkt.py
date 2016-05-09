@@ -125,18 +125,8 @@ def forward_update_mastery(mastery, guess, slip, learn_rate, Y):
 	return new_mastery
 	
 class BKT(object):
-	def __init__(self, init_mastery=0.5):
-		self.init_mastery = init_mastery
 	
-	def load(self, data_path):
-		log_data = []
-		with open(data_path) as f:
-			for line in f:
-				if not line.strip():
-					continue
-				i,t,Y = line.strip().split(',')
-				log_data.append((int(i),int(t),int(Y)))
-		
+	def load(self, log_data):		
 		self.long_log = log_data
 		self.short_log = collapse_log(log_data)	
 	
@@ -157,7 +147,6 @@ class BKT(object):
 	def predict(self, log_data=[]):
 		if not log_data:
 			log_data = self.long_log
-			
 		pred_log = []
 		for log in log_data:
 			Y = log[2]

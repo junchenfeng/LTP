@@ -6,7 +6,7 @@ from gevent import monkey;gevent.monkey.patch_all();
 proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, proj_dir)
 
-from utl.IO import data_loader
+from utl.IO import data_loader_from_file, data_loader_from_list
 from utl.utl import Z_assembly
 
 class RunVanillaMLC(object):
@@ -27,11 +27,14 @@ class RunVanillaMLC(object):
         self.stop_threshold = 0.001
         self.max_iteration = 10
 
-    def load_data(self, file_path):
-        self.response_data = data_loader(file_path, self.max_opportunity)
+    def load_data_from_file(self, file_path):
+        self.response_data = data_loader_from_path(file_path, self.max_opportunity)
         self.num_user = len(self.response_data)
 
-
+    def load_data_from_list(self, log_data):
+        self.response_data = data_loader_from_list(log_data, self.max_opportunity)
+        self.num_user = len(self.response_data)
+		
     def solve(self):
         # The initial density does not predict convergence, thus the trick is
         # just try enough combinations

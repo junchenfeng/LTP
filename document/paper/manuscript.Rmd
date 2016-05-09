@@ -66,11 +66,51 @@ For practical purpose, parameter identification is less useful than outsample pr
 
 ## 5.1 Simulation
 
-### 5.1.1 Single Component that complies with BKT DGP
+```{r,message=FALSE, warning=FALSE,echo=FALSE}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+```
 
-### 5.1.2 Single Component that does not comply with BKT DGP
+## 5.1.1 Data Generating Process
+The respective model is trained on 90% of the data, while the auc metric is evaluated on 10% of the holdout data. 1000 users are simulated. Each user has a maximum of 10 data points.
 
-### 5.1.3 Two Component Mxiture
+The first dataset follows the bayesian knowledge tracing process. Slip is 10%, guess is 20%, the initial mastery is 60% and the learn rate is 20%.
+
+The second dataset follows a learning curve of (0.85,0.7,0.6,0.5,0.4,0.3,0.25,0.20,0.15,0.1), which implies same slip rate and guess rate as the single component BKT.
+
+The third dataset follows a mixture of learning curves. One learning curve is the same as single component MLC, which represents a progressing learner. The other curve is a stable 10% error rate which represents an accomplished learner. 80% of the simulated user is progressing user while the rest 20% is accomplished users.
+
+The average learning curves of three datasets are show in the following graphs.
+
+```{r, message=FALSE,warning=FALSE,echo=FALSE}
+lc_1 = data.frame(t=seq(1,10), r=as.numeric(10),type='d1')
+lc_1$r[1] = 0.6
+for (i in seq(2,10)){
+    lc_1$r[i] = lc_1$r[i-1] + (1-lc_1$r[i-1])*0.2
+}
+lc_1$r = 1-lc_1$r
+
+lc_2 = data.frame(t=seq(1,10), r=c(0.85,0.7,0.6,0.5,0.4,0.3,0.25,0.20,0.15,0.1), type='d2')
+lc_3 = data.frame(t=seq(1,10), r=c(0.85,0.7,0.6,0.5,0.4,0.3,0.25,0.20,0.15,0.1)*0.7+c(0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1)*0.3, type='d3')
+
+lc = rbind(lc_1,lc_2,lc_3)
+
+qplot(data=lc, x=t,y=r,col=type, geom='line')
+
+```
+
+## 5.1.2 Performance on the Complete Dataset
+
+Mixture Learning Curve dominates all three datasets in terms of auc. 
+
+```{r,message=FALSE, warning=FALSE,echo=FALSE}
+file_path = 'C:/Users/junchen/Documents/GitHub/pyMLC/data/test/pk.txt'
+pk_data = read.table(file_path, sep=',', col.names=c('fpr','tpr','method','exp'))
+
+qplot(data=pk_data, x=fpr, y=tpr, geom='line', col=factor(method), facets=.~exp)
+
+```
 
 ## 5.2 Field Data
 
