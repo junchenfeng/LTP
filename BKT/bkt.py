@@ -3,7 +3,7 @@
 import numpy as np
 from collections import defaultdict
 import os
-proj_dir = os.path.dirname(os.path.abspath(__file__))
+proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import ipdb
 
 from scipy.optimize import minimize
@@ -136,11 +136,18 @@ class BKT(object):
 		target_fnc = lambda params: data_llk(self.short_log, params)
 		target_grad = lambda params: data_grad(self.short_log, params)
 			
-		bnds = [(0.55,0.95),(0.05,0.95),(-np.log(0.95),-np.log(0.05))]  # the bnds are not strict
+		bnds = [(0.75,0.95),(0.05,0.95),(-np.log(0.95),-np.log(0.05))]  # the bnds are not strict
+		
+		# 0.05<= g = c-A/(1-L) <=0.3
+		cons = ({'type': 'ineq', 'fun': lambda x:  x[0]-1/(1-self.init_mastery)*x[1]-0.05},
+				 {'type': 'ineq', 'fun': lambda x: 0.25-x[0]+1/(1-self.init_mastery)*x[1]})
+		# x[0]-1/(1-self.init_mastery)*x[1]
+		# 0.25-x[0]+1/(1-self.init_mastery)*x[1]
 		
 		# start with slip=guess=0.2, learn rate=0.1, init_mastery = 0.5
-		res = minimize(target_fnc, x0, method='L-BFGS-B', jac=target_grad, bounds=bnds)		
-		
+		res = minimize(target_fnc, x0, method='SLSQP', 
+						jac=target_grad, 
+						bounds=bnds, constraints=cons)
 		self.slip, self.guess, self.learn_rate = reconstruct_bkt_parameter(res.x[0],res.x[1],res.x[2], self.init_mastery)
 	
 	
@@ -174,8 +181,14 @@ if __name__ == '__main__':
 		
 	# run demo
 	data_file_path = proj_dir+'/data/bkt/test/single_sim.txt'
-	test_case = BKT(init_mastery=0.5)
-	test_case.load(data_file_path)
+	log_data = []
+	with open(data_file_path) as f:
+		for line in f:
+			i, t, y = line.strip().split(',')
+			log_data.append((int(i),int(t),int(y)))
+	
+	test_case = BKT()
+	test_case.load(log_data)
 	test_case.estimate()
 	pred_log = test_case.predict()
 	
