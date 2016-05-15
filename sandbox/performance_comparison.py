@@ -5,27 +5,22 @@ proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import sys
 sys.path.append(proj_dir)
 
-from MLC.solver.vanilla_MLC import RunVanillaMLC
-from MLC.solver.predict_performance import get_predict
-from MLC.utl.IO import data_loader_from_list
-
-from BKT.bkt import BKT
-
-import numpy as np
-from sklearn import metrics
-
-import ipdb
-
+from model import learning_curve_model
 
 test_data_1 = proj_dir+'/data/bkt/test/single_sim.txt'
 test_data_2 = proj_dir+'/data/mlc/single_component_complete_track.txt'
 test_data_3 = proj_dir+'/data/mlc/double_component_complete_track.txt'
 
 
+
 T = 10
+models = {'mlc':learning_curve_model('mlc'),
+		  'bkt':learning_curve_model('bkt')}
+
+model_names = ['mlc','bkt']
 
 def performance_pk(data_file_path):
-	pk_res = {'mlc':[],'bkt':[]}
+	pk_res = {}
 
 	train_log_data = []
 	predict_log_data = []
@@ -39,37 +34,10 @@ def performance_pk(data_file_path):
 			else:
 				predict_log_data.append((int(i),int(t),int(Y)))
 
-
-	test_instance = RunVanillaMLC()
-	test_instance.init(2, max_t=T)
-	test_instance.load_data_from_list(train_log_data)
-	res = test_instance.solve()
-	
-	predict_res = data_loader_from_list(predict_log_data, max_opportunity=T)
-	y_true, y_pred = get_predict(predict_res, 
-								  res['q'],
-								  res['p'])
-								  
-	fpr,tpr,thresholds = metrics.roc_curve(np.array(y_true),np.array(y_pred))
-	pk_res['mlc']= [fpr, tpr, thresholds]
-	auc = metrics.auc(fpr, tpr)
-	print auc
-
-	test_case = BKT()
-	test_case.load(train_log_data)
-	test_case.estimate()
-	pred_log = test_case.predict(predict_log_data)
-
-	y_true = np.array([x[0] for x in pred_log])
-	y_pred = np.array([x[1] for x in pred_log])
-
-	fpr,tpr,thresholds = metrics.roc_curve(y_true,y_pred)
-	pk_res['bkt']= [fpr, tpr, thresholds]
-
-	auc = metrics.auc(fpr, tpr)
-	print auc
-	
-	
+	for model_name in model_names:
+		models[model_name].load(train_log_data)
+		models[model_name].train()
+		pk_res[model_name] = models[model_name].evaluate(predict_log_data, metrics='auc_detail')
 	# update the structure
 	
 	return pk_res

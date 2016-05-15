@@ -50,3 +50,21 @@ def data_loader_from_list(log_data, max_opportunity):
 		response_data.append(user_response)
 
 	return response_data
+
+	
+def data_loader_by_userid(log_data, max_opportunity):
+	# the log is a list of  (i,t,y) 
+	user_result = defaultdict(dict)
+	for log in log_data:
+		i=log[0]; t=log[1]; y=log[2]
+		if t > max_opportunity:
+			continue
+		user_result[i][t] = y		
+
+	# run a second time
+	response_data = {}
+	for user_id, user_log in user_result.items():
+		user_response = [user_log[x] for x in sorted(user_log.keys())]
+		response_data[user_id]=user_response
+
+	return response_data

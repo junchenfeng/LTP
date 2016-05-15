@@ -2,11 +2,11 @@
 
 import numpy as np
 from collections import defaultdict
+from scipy.optimize import minimize
+
 import os
 proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import ipdb
-
-from scipy.optimize import minimize
 
 
 # inference routinue
@@ -18,13 +18,15 @@ def compute_success_rate(guess, slip, mastery):
 
 	
 # etl func
-def collapse_log(long_log):
+def collapse_log(long_log, max_t):
 	# long log (i,t,Y) -> short_log (Y/N,t,0)
 	# reduce runtime in estimation
 	if not long_log:
 		raise ValueError('log is empty')
 	log_dict = {1:defaultdict(int),0:defaultdict(int)}
 	for log in long_log:
+		if log[1] > max_t:
+			continue
 		log_dict[log[2]][log[1]] += 1
 	
 	short_log = []
@@ -101,15 +103,15 @@ def reconstruct_bkt_parameter(c,A,beta,init_mastery):
 	guess = c-A/(1-init_mastery)
 		
 	if slip<=0 or slip>=0.5:
-		print 'Slip is not valid.'
+		print 'Slip %f is not valid. Truncate to [0.01,0.49].' % slip
 		slip = min(max(0.01,guess),0.49)
 		
 	if guess<=0 or guess>=0.5:
-		print 'guess is not valid.'
+		print 'guess %f is not valid. Truncate to [0.01,0.49].' % guess
 		guess = min(max(0.01,guess),0.49)
 		
 	if learn_rate<=0 or learn_rate>=1:
-		print 'learn rate is not valid.'		
+		print 'learn rate %f is not valid. Truncate to [0.01, 0.99]'		
 		learn_rate = min(max(0.01,learn_rate),0.99)
 		
 	return slip,guess,learn_rate
@@ -126,9 +128,9 @@ def forward_update_mastery(mastery, guess, slip, learn_rate, Y):
 	
 class BKT(object):
 	
-	def load(self, log_data):		
+	def load(self, log_data, max_t=99):		
 		self.long_log = log_data
-		self.short_log = collapse_log(log_data)	
+		self.short_log = collapse_log(log_data, max_t)	
 	
 		self.init_mastery = impute_init_mastery(self.short_log)
 	
@@ -155,12 +157,15 @@ class BKT(object):
 		if not log_data:
 			log_data = self.long_log
 		pred_log = []
+		prob = 0
 		for log in log_data:
 			Y = log[2]
 			t = log[1]
 			if t == 1:
 				mastery = self.init_mastery
 			else:
+				if prob == 0:
+					raise Exception('The log sequence may not start from 1.')
 				# append pred_log, prob is retained from the last iteration
 				pred_log.append((Y,prob))
 			
