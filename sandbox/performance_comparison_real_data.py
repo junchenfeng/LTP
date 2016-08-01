@@ -38,7 +38,7 @@ for item_id in item_data.keys():
 	print item_id
 	item_auc[item_id] = performance_pk(item_data[item_id]['train'], item_data[item_id]['predict'])	
 
-#item_id = '87#102376'
+#item_id = '86#102298'
 #performance_pk(item_data[item_id]['train'], item_data[item_id]['predict'])
 
 ipdb.set_trace()
