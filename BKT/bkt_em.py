@@ -14,15 +14,19 @@ class BKT_HMM(object):
 		self.method = method
 			
 	def _load_observ(self, data):
-		# the input data are [[y1_1,..,y1_T1],[y2_1,...,y2_T2],..] because learner practice length is not necessary the same
-		self.K = len(data)
-		self.Tvec =[]
-		for k in range(self.K):
-			self.Tvec.append(len(data[k]))
+		self.K = len(set([x[0] for x in data]))
+		self.T = max([x[1] for x in data]) + 1
+		
+		self.observ_data = np.empty((self.T, self.K))
+		T_array = np.zeros((self.K,))
+		
+		for log in data:
+			i = log[0]; t = log[1]; y = log[2]
+			self.observ_data[t, i] = y
+			T_array[i] = t
+		
+		self.Tvec = [int(x)+1 for x in T_array.tolist()] 
 		self.T = max(self.Tvec)
-		self.observ_data = np.empty((self.T,self.K))
-		for k in range(self.K):
-			self.observ_data[0:self.Tvec[k],k] = data[k]
 		
 		# initilize for the rest of the structure
 		st_size = (self.T, self.K, 2)
@@ -77,7 +81,6 @@ class BKT_HMM(object):
 		elif self.method == 'MCMC':
 			self._MCMC(L)
 			# TODO: provide MAP estimator
-			ipdb.set_trace()
 			self.s = np.mean(self.parameter_chain[range(int(L/2),L,20),0])
 			self.g = np.mean(self.parameter_chain[range(int(L/2),L,20),1])
 			self.pi =np.mean(self.parameter_chain[range(int(L/2),L,20),2])
@@ -219,52 +222,18 @@ def generate_learning_curve(slip, guess, init_mastery, learn_rate, T):
 		
 if __name__ == '__main__':
 
-	beta_s = 0.05
-	beta_g = 0.1
-	pi = 0.05
-	beta_l = 0.2
 
-	# simulate 
-	N = 500
-	T = 5
-
-	full_data_array = []
-	data_array = []
-	
-	for i in range(N):
-		full_observ_list = []
-		observ_list = []
-		is_stop=False
-		
-		for t in range(T):
-			if t ==0:
-				s=1 if np.random.uniform() <= pi else 0
-			else:
-				if s == 0:
-					s = 1 if  np.random.uniform() < beta_l else 0
-			
-			if s:
-				y = 0 if np.random.uniform() < beta_s else 1
-			else:
-				y = 1 if np.random.uniform() < beta_g else 0
-			
-			full_observ_list.append(y)
-			
-			# generate imbalance dataset
-			if t>1 and not is_stop:
-				if np.random.uniform() < 0.1:
-					is_stop =True
-			if not is_stop:
-				observ_list.append(y)
-		
-		data_array.append(observ_list)
-		full_data_array.append(full_observ_list)
 		# FB-aglorithm check
 
-	init_param = {'s':np.random.uniform(0,0.2),
-				  'g':np.random.uniform(0,0.3), 
+	init_param = {'s':np.random.uniform(0,0.5),
+				  'g':np.random.uniform(0,0.5), 
 				  'pi':np.random.uniform(0,1),
 				  'l':np.random.uniform(0,1)}
+				  
+	init_param = {'s':0.34,
+				  'g':0.02, 
+				  'pi':0.8,
+				  'l':0.6}
 	'''
 	# unit test array
 	init_param = {'s':0.1,
@@ -287,22 +256,36 @@ if __name__ == '__main__':
 				'pi':0.25,
 				'l':0.1}
 	'''
+	import os
+	proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))	
+	data_array = []
+	with open(proj_dir+'/data/BKT/test/single_sim.txt') as f:
+		for line in f:
+			i_s, t_s, y_s, x_s, is_e_s, is_a_s = line.strip().split(',')
+			if int(is_a_s):
+				data_array.append( (int(i_s), int(t_s), int(y_s)) )	
 	
-	print('Initial')
-	print(init_param['s'],init_param['g'],init_param['pi'],init_param['l'])
+
 	
 	x1 = BKT_HMM(init_param, method='MCMC')
-	x1.estimate(full_data_array, L=1000)
+	x1.estimate(data_array, L=500)
 	
 	
 	print('EM')
 	x2 = BKT_HMM(init_param)
 	x2.estimate(data_array)
 	
+	print('Initial')
+	print(init_param['s'],init_param['g'],init_param['pi'],init_param['l'])
+	print('MCMC')	
+	print(x1.s, x1.g, x1.pi, x1.l)
+	print('EM')
+	print(x2.s, x2.g, x2.pi, x2.l)
 
 	
 	# check the learning curve difference
-	true_lc = generate_learning_curve(beta_s,beta_g,pi,beta_l, T)
+	T = 5
+	true_lc = generate_learning_curve(0.05,0.2,0.4,0.3, T)
 	est_lc_1 = generate_learning_curve(x1.s,x1.g,x1.pi,x1.l, T)
 	est_lc_2 = generate_learning_curve(x2.s,x2.g,x2.pi,x2.l, T)
 	
