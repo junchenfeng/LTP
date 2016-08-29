@@ -146,7 +146,6 @@ class BKT_HMM_SURVIVAL(object):
 				X_mat = generate_possible_states(Ti)
 				llk_vec = get_llk_all_states(X_mat, O, E, self.harzard_matrix, self.observ_matrix, self.state_init_dist, self.state_transit_matrix)
 				
-				ipdb.set_trace()
 				
 				self.obs_type_info[key]['pi'] = get_single_state_llk(X_mat, llk_vec, 0, 1)/llk_vec.sum()
 				self.obs_type_info[key]['l_vec'] = [ get_joint_state_llk(X_mat, llk_vec, t, 0, 1) /get_single_state_llk(X_mat, llk_vec, t-1, 0) for t in range(1,Ti)]
@@ -372,3 +371,30 @@ if __name__=='__main__':
 	
 	ipdb.set_trace()
 			
+'''
+True
+0.05	0.2		0.4		0.3
+Initial 
+0.34 0.02 0.8 0.6
+MCMC Survival
+0.143930696326 0.0293736689698 0.563395964497 0.556192626275 0.0376661470285 0.295257867216 0.447341906526 0.0602414700364
+
+MCMC
+0.197706967313 0.0186412326257 0.721591324426 0.553532936245
+
+EM
+0.226070313274 0.222227205479 0.445026039989 0.25497419356
+
+learning curve
+True
+0.5, 				  0.635,				   0.7295,  			0.79565, 			0.8419549999999999
+
+MCMC Survival
+0.49513065342929213,  0.69588206923313178, 		0.78497702785257983, 		0.82451802744960156, 	0.84206661463521137
+
+MCMC
+0.58411757292103006, 0.70488487578197911, 0.75880349888794951, 0.78287638822779881, 0.79362414044746665
+
+EM
+0.46774917596060894, 0.54581730477705026, 	0.60398007540574483, 	0.64731284049814553, 0.67959686875636638
+'''
