@@ -2,6 +2,9 @@ import numpy as np
 import os
 proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+
+
+
 # model parameters
 s = 0.05
 g = 0.2

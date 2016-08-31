@@ -1,9 +1,6 @@
 import numpy as np
 from collections import defaultdict
 from tqdm import tqdm
-
-
-
 import ipdb
 
 def survivial_llk(h,E):
@@ -27,7 +24,7 @@ def state_llk(X,init_dist,transit_matrix):
 
 	return prob
 	
-def likelihood(X, O, E, harzard_matrix, observ_matrix, state_init_dist, state_transit_matrix):
+def likelihood(X, O, E, harzard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix):
 	# X:  Latent state
 	# O: observation
 	# E: binary indicate whether the spell is ended
@@ -37,7 +34,7 @@ def likelihood(X, O, E, harzard_matrix, observ_matrix, state_init_dist, state_tr
 	pa = survivial_llk(h,E)
 	
 	# P(O|X)
-	po = np.product([observ_matrix[X[t],O[t]] for t in range(T)])
+	po = np.product([observ_prob_matrix[X[t],O[t]] for t in range(T)])
 
 	# P(X)
 	px = state_llk(X, state_init_dist, state_transit_matrix)
@@ -51,13 +48,13 @@ def generate_possible_states(T):
 		X_mat[t,:t]=0
 	return X_mat
 
-def get_llk_all_states(X_mat,O,E,harzard_matrix, observ_matrix, state_init_dist,state_transit_matrix):
+def get_llk_all_states(X_mat,O,E,harzard_matrix, observ_prob_matrix, state_init_dist,state_transit_matrix):
 	N_X = X_mat.shape[0]
 	llk_vec = []
 	
 	for i in range(N_X):
 		X = [int(x) for x in X_mat[i,:].tolist()]
-		llk_vec.append( likelihood(X, O, E, harzard_matrix, observ_matrix, state_init_dist,state_transit_matrix) )
+		llk_vec.append( likelihood(X, O, E, harzard_matrix, observ_prob_matrix, state_init_dist,state_transit_matrix) )
 		
 	return np.array(llk_vec)
 
@@ -81,16 +78,12 @@ def get_E(E,t,T):
 			Et = 0
 	return Et
 	
+def logExpSum(llk_vec):
+	llk_max = max(llk_vec)
+	llk_sum = llk_max + np.log(np.exp(llk_vec-llk_max).sum())
+	return llk_sum
+	
 class BKT_HMM_SURVIVAL(object):
-	def __init__(self, init_param):
-		self.g = init_param['g']  # guess
-		self.s = init_param['s']  # slippage
-		self.pi = init_param['pi']  # initial prob of mastery
-		self.l = init_param['l']  # learn speed
-		self.h0 = init_param['h0']  # harzard rate with response 0
-		self.h1 = init_param['h1']  # harzard rate with response 1
-
-			
 	def _load_observ(self, data):
 		# the input data are [(i,t,y,e)] because learner practice length is not necessary the same
 		# TODO: assume T starts from 0
@@ -102,7 +95,11 @@ class BKT_HMM_SURVIVAL(object):
 		T_array = np.zeros((self.K,))
 		
 		for log in data:
-			i = log[0]; t = log[1]; y = log[2]; is_e = log[3]
+			if len(log)==3:
+				# The spell never ends
+				i = log[0]; t = log[1]; y = log[2]; is_e = 0
+			else:
+				i = log[0]; t = log[1]; y = log[2]; is_e = log[3]
 			self.O_array[t, i] = y
 			self.E_array[t, i] = is_e
 			T_array[i] = t
@@ -122,8 +119,8 @@ class BKT_HMM_SURVIVAL(object):
 		if t == 0:
 			pa = survivial_llk(h, E)			
 			# pi(i,0) = P(X_0=i|O0,\theta)
-			p0y = (1-self.pi)*self.observ_matrix[0,observ]*pa
-			p1y = self.pi*self.observ_matrix[1,observ]*pa
+			p0y = (1-self.pi)*self.observ_prob_matrix[0,observ]*pa
+			p1y = self.pi*self.observ_prob_matrix[1,observ]*pa
 			py = p0y+p1y
 			pi_vec[t,0] = p0y/py
 			pi_vec[t,1] = p1y/py
@@ -136,10 +133,10 @@ class BKT_HMM_SURVIVAL(object):
 	def __update_P(self, t, h, E, observ, pi_vec, P_mat):
 		p_raw = np.zeros((2,2))
 		pa = survivial_llk(h, E)
-		p_raw[0,0] = pi_vec[t,0]*self.state_transit_matrix[0,0]*self.observ_matrix[0,observ]*pa
-		p_raw[0,1] = pi_vec[t,0]*self.state_transit_matrix[0,1]*self.observ_matrix[1,observ]*pa
-		p_raw[1,0] = pi_vec[t,1]*self.state_transit_matrix[1,0]*self.observ_matrix[0,observ]*pa
-		p_raw[1,1] = pi_vec[t,1]*self.state_transit_matrix[1,1]*self.observ_matrix[1,observ]*pa
+		p_raw[0,0] = pi_vec[t,0]*self.state_transit_matrix[0,0]*self.observ_prob_matrix[0,observ]*pa
+		p_raw[0,1] = pi_vec[t,0]*self.state_transit_matrix[0,1]*self.observ_prob_matrix[1,observ]*pa
+		p_raw[1,0] = pi_vec[t,1]*self.state_transit_matrix[1,0]*self.observ_prob_matrix[0,observ]*pa
+		p_raw[1,1] = pi_vec[t,1]*self.state_transit_matrix[1,1]*self.observ_prob_matrix[1,observ]*pa
 		
 		P_mat[t,:,:] = p_raw/p_raw.sum()
 		return P_mat		
@@ -147,7 +144,7 @@ class BKT_HMM_SURVIVAL(object):
 	def _update_derivative_parameter(self):
 		self.state_init_dist = np.array([1-self.pi, self.pi])
 		self.state_transit_matrix = np.array([[1-self.l, self.l], [0, 1]])
-		self.observ_matrix = np.array([[1-self.g, self.g], [self.s, 1-self.s]])  # index by state, observ
+		self.observ_prob_matrix = np.array([[1-self.g, self.g], [self.s, 1-self.s]])  # index by state, observ
 		self.harzard_matrix = np.array([self.h0, self.h1])
 	
 	def _collapse_obser_state(self):
@@ -180,8 +177,7 @@ class BKT_HMM_SURVIVAL(object):
 					#calculate the exhaustive state probablity
 					Ti = len(O)					
 					X_mat = generate_possible_states(Ti)
-					llk_vec = get_llk_all_states(X_mat, O, E, self.harzard_matrix, self.observ_matrix, self.state_init_dist, self.state_transit_matrix)
-					
+					llk_vec = get_llk_all_states(X_mat, O, E, self.harzard_matrix, self.observ_prob_matrix, self.state_init_dist, self.state_transit_matrix)
 					
 					self.obs_type_info[key]['pi'] = get_single_state_llk(X_mat, llk_vec, 0, 1)/llk_vec.sum()
 					self.obs_type_info[key]['l_vec'] = [ get_joint_state_llk(X_mat, llk_vec, t, 0, 1) /get_single_state_llk(X_mat, llk_vec, t-1, 0) for t in range(1,Ti)]
@@ -244,7 +240,6 @@ class BKT_HMM_SURVIVAL(object):
 						if t == 0:
 							init_pis[k] = p
 						X[t,k] = np.random.binomial(1,p)
-				# 
 						
 			# Step 2: Update Parameter
 			critical_trans = 0
@@ -271,41 +266,83 @@ class BKT_HMM_SURVIVAL(object):
 						survive_cnt[int(self.O_array[t,k])] += 1-self.E_array[t,k]
 			
 			
-			self.l = np.random.beta(1+critical_trans, 4+tot_trans-critical_trans)
-			self.pi = np.random.beta(2+sum(X[0,:]),2+self.K-sum(X[0,:]))
-			self.s = np.random.beta(1+obs_cnt[1,0],9+obs_cnt[1,1])
-			self.g = np.random.beta(1+obs_cnt[0,1],3+obs_cnt[0,0])
+			self.l =  np.random.beta(self.prior_param['l'][0]+critical_trans, self.prior_param['l'][1]+tot_trans-critical_trans)
+			self.pi = np.random.beta(self.prior_param['pi'][0]+sum(X[0,:]), self.prior_param['pi'][1]+self.K-sum(X[0,:]))
+			self.s =  np.random.beta(self.prior_param['s'][0]+obs_cnt[1,0], self.prior_param['s'][1]+obs_cnt[1,1])
+			self.g =  np.random.beta(self.prior_param['g'][0]+obs_cnt[0,1], self.prior_param['g'][1]+obs_cnt[0,0])
 
 
-			self.h0 = np.random.beta(1+drop_cnt[0], 9 + survive_cnt[0])
-			self.h1 = np.random.beta(1+drop_cnt[1], 9 + survive_cnt[1])
+			self.h0 = np.random.beta(self.prior_param['h0'][0]+drop_cnt[0], self.prior_param['h0'][1] + survive_cnt[0])
+			self.h1 = np.random.beta(self.prior_param['h1'][0]+drop_cnt[1], self.prior_param['h1'][1] + survive_cnt[1])
 			
 			self.parameter_chain[iter, :] = [self.s, self.g, self.pi, self.l, self.h0, self.h1]
 			self._update_derivative_parameter()
-			# for monitoring purpose
-			if iter%100 == 0:
-				print(iter)	
+				
+	def __get_llk(self, s, g, pi, l, h0, h1):
+		# can only calculat the insample fit
+		state_init_dist = np.array([1-pi, pi])
+		state_transit_matrix = np.array([[1-l, l], [0, 1]])
+		observ_prob_matrix = np.array([[1-g, g], [s, 1-s]])  # index by state, observ
+		harzard_matrix = np.array([h0, h1])		
+		
+		type_llk_ref = {}
+		
+		for key in self.obs_type_info.keys():
+			# get the obseration state
+			O = self.obs_type_info[key]['O']
+			E = self.obs_type_info[key]['E']
 			
-	def estimate(self, data_array, max_iter=1000):
+			#calculate the exhaustive state probablity
+			Ti = len(O)					
+			X_mat = generate_possible_states(Ti)
+			X_llk_vec = get_llk_all_states(X_mat, O, E, harzard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix)
+			type_llk_ref[key] = np.log(X_llk_vec.sum())
+		
+		llk = 0
+		for k in range(self.K):
+			obs_key = self.obs_type_ref[k]
+			llk += type_llk_ref[obs_key]
+		
+		return llk
+				
+	def _get_point_estimation(self, start, end):
+		# calcualte the llk for the parameters
+		gap = max(int((end-start)/100), 10)
+		parameter_candidates = self.parameter_chain[range(start, end, gap), :]
+		N = parameter_candidates.shape[0]
+		llk_vec = np.zeros((N,))
+		
+		for i in range(N):
+			llk_vec[i] = self.__get_llk(parameter_candidates[i,0], parameter_candidates[i,1], parameter_candidates[i,2], parameter_candidates[i,3], parameter_candidates[i,4], parameter_candidates[i,5])
+		
+		llk_sum = logExpSum(llk_vec)
+		parameter_weight = np.exp(llk_vec - llk_sum)
+		
+		avg_parameter = np.dot(parameter_candidates.transpose(), parameter_weight).tolist()
+		
+		return avg_parameter
+				
+	def estimate(self, init_param, data_array, max_iter=1000):
 	
+		self.g = init_param['g']  # guess
+		self.s = init_param['s']  # slippage
+		self.pi = init_param['pi']  # initial prob of mastery
+		self.l = init_param['l']  # learn speed
+		self.h0 = init_param['h0']  # harzard rate with response 0
+		self.h1 = init_param['h1']  # harzard rate with response 1
+		
+		self.prior_param = {'l': [2,2],
+							's': [1,2],
+							'g': [1,2],
+							'pi':[2,2],
+							'h0':[1,9],
+							'h1':[1,9]}
+		
 		self._load_observ(data_array)
-	
 		self._MCMC(max_iter)
-		
-		def get_point_estimation(data_array):
-			# keep the 10%-90%
-			lower = np.percentile(data_array, 0.1)
-			valid_data = data_array[data_array>lower]
-			# take mean
-			est = valid_data.mean()
-			return est
-		
-		self.s = 	get_point_estimation(self.parameter_chain[range(int(max_iter/2),max_iter,20),0])
-		self.g = 	get_point_estimation(self.parameter_chain[range(int(max_iter/2),max_iter,20),1])
-		self.pi =	get_point_estimation(self.parameter_chain[range(int(max_iter/2),max_iter,20),2])
-		self.l = 	get_point_estimation(self.parameter_chain[range(int(max_iter/2),max_iter,20),3])
-		self.h0 = 	get_point_estimation(self.parameter_chain[range(int(max_iter/2),max_iter,20),4])
-		self.h1 = 	get_point_estimation(self.parameter_chain[range(int(max_iter/2),max_iter,20),5])
+		self.s, self.g, self.pi, self.l, self.h0, self.h1 = self._get_point_estimation(int(max_iter/2), max_iter)
+		return self.s, self.g, self.pi, self.l, self.h0, self.h1
+
 	
 		
 if __name__=='__main__':
@@ -331,12 +368,12 @@ if __name__=='__main__':
 	#px = 0.7*0.2*1
 	#po = 0.2*0.05*0.95
 	#pa = (1-0.3)*(1-0.2)*(1-0.1)
-	prob = likelihood(X,O,E,harzard_matrix, observ_matrix, state_init_dist,state_transit_matrix) # 0.00067032
+	prob = likelihood(X,O,E,harzard_matrix, observ_prob_matrix, state_init_dist,state_transit_matrix) # 0.00067032
 	print([prob,0.00067032])
 	
 	E = 1
 	#pa = (1-0.3)*(1-0.2)*0.1
-	prob = likelihood(X,O,E,harzard_matrix, observ_matrix, state_init_dist,state_transit_matrix) # 0.00007448
+	prob = likelihood(X,O,E,harzard_matrix, observ_prob_matrix, state_init_dist,state_transit_matrix) # 0.00007448
 	print([prob,0.00007448])
 	
 	E = 0
@@ -344,7 +381,7 @@ if __name__=='__main__':
 	# px = 0.3*1*1
 	# po = 0.95*0.05*0.95
 	# pa = 0.9*0.8*0.9
-	prob = likelihood(X,O,E,harzard_matrix, observ_matrix, state_init_dist,state_transit_matrix) # 0.0087723
+	prob = likelihood(X,O,E,harzard_matrix, observ_prob_matrix, state_init_dist,state_transit_matrix) # 0.0087723
 	print([prob,0.0087723])
 	'''
 	
@@ -397,78 +434,4 @@ if __name__=='__main__':
 				  'h10':np.random.uniform(0,1),
 				  'h11':np.random.uniform(0,1)
 	}	
-	'''
-	
-	
-	
-
-	import os			  
-	max_obs = 250
-	
-	proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))	
-	data_array = []
-	data_cnt = 0
-	with open(proj_dir+'/data/BKT/test/single_sim.txt') as f:
-		for line in f:
-			i_s, t_s, y_s, x_s, is_e_s, is_a_s = line.strip().split(',')
-			
-			if int(i_s) == max_obs:
-				break
-			
-			if int(is_a_s):
-				data_array.append( (int(i_s), int(t_s), int(y_s), int(is_e_s)) )	
-			data_cnt += 1	
-
-	y0s = [log[2] for log in data_array if log[1]==0]
-	y1s = [log[2] for log in data_array if log[1]==1]
-	yTs = [log[2] for log in data_array if log[1]==4]
-	
-	EYs = [(log[2], log[3]) for log in data_array if log[1]>0]
-	h1 = float(  sum([x[1] for x in EYs if x[0]==1]) )/len([x[0] for x in EYs if x[0]==1])
-	h0 = float(  sum([x[1] for x in EYs if x[0]==0]) )/len([x[0] for x in EYs if x[0]==0])
-	
-	init_param = {'s': 1-np.array(yTs).mean(),
-				  'g': 0.3, 
-				  'pi': np.array(y0s).mean(),
-				  'l': np.array(y1s).mean() - np.array(y0s).mean(),
-				  'h0': h0,
-				  'h1': h1}
-				  
-	init_param = {'s':np.random.uniform(0,0.5),
-				  'g':np.random.uniform(0,0.5), 
-				  'pi':np.random.uniform(0,1),
-				  'l':np.random.uniform(0,1),
-				  'h0':np.random.uniform(0,1),
-				  'h1':np.random.uniform(0,1)}	
-
-	x1 = BKT_HMM_SURVIVAL(init_param)
-	x1.estimate(data_array, max_iter=1000)
-	print(init_param['s'],init_param['g'],init_param['pi'],init_param['l'], init_param['h0'],init_param['h1'])
-	print(x1.s, x1.g, x1.pi, x1.l, x1.h0, x1.h1)
-	ipdb.set_trace()	
-
-	def update_mastery(mastery, learn_rate):
-		return mastery + (1-mastery)*learn_rate
-
-	def compute_success_rate(guess, slip, mastery):
-		return guess*(1-mastery) + (1-slip)*mastery		
-		
-	def generate_learning_curve(slip, guess, init_mastery, learn_rate, T):
-		p=init_mastery
-		lc = [compute_success_rate(guess, slip, p)]
-		for t in range(1,T):
-			p = update_mastery(p,learn_rate)
-			lc.append(compute_success_rate(guess, slip, p))
-		return lc
-
-	true_lc = generate_learning_curve(0.05, 0.2, 0.4, 0.3, 5)
-	est_lc = generate_learning_curve(x1.s, x1.g, x1.pi, x1.l, 5)
-	
-	
-
-	
-	print(true_lc)
-	print(est_lc)	
-	
-	ipdb.set_trace()
-			
+	'''			
