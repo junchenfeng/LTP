@@ -14,10 +14,10 @@ class BKT_HMM(object):
 		self.l = init_param['l']  # learn speed
 		self.method = method
 		
-		self.prior_param = {'l':[10,10],
-							's':[5,10],
-							'g':[5,10],
-							'pi':[10,10]}
+		self.prior_param = {'l':[2,2],
+							's':[1,2],
+							'g':[1,2],
+							'pi':[2,2]}
 			
 	def _load_observ(self, data):
 		self.K = len(set([x[0] for x in data]))
@@ -248,6 +248,7 @@ class BKT_HMM(object):
 			
 			if sampling == 'DG':
 				# backward recursion
+				init_pis = np.zeros((self.K,1))
 				for k in range(self.K):
 					# update forward
 					for t in range(self.Tvec[k]):
@@ -260,23 +261,25 @@ class BKT_HMM(object):
 						self._update_backward(t, k, 1)
 				
 					# Forward sampling
-					for k in range(self.K):  # Under the assumption of IID between learners
-						# initial state
-						t = 0
-						observ = int(self.observ_data[t,k])
-						w0 = (1-self.pi)*self.link_prob_matrix[0,observ]*self.b_vec[t,k,0]
-						w1 = self.pi*self.link_prob_matrix[1,observ]*self.b_vec[t,k,1]
-						X[t,k] = np.random.binomial(1,w1/(w1+w0))
-						# transit
-						for t in range(1,self.Tvec[k]):
-							# An special case because of constraint
-							if X[t-1,k] == 1:
-								X[t,k] = 1
-							else:
-								observ = int(self.observ_data[t,k])
-								w0 = self.transit_matrix[0,0]*self.link_prob_matrix[0,observ]*self.b_vec[t,k,0] 
-								w1 = self.transit_matrix[0,1]*self.link_prob_matrix[1,observ]*self.b_vec[t,k,1]
-								X[t,k] = np.random.binomial(1,w1/(w1+w0))
+					# initial state
+					t = 0
+					observ = int(self.observ_data[t,k])
+					w0 = (1-self.pi)*self.link_prob_matrix[0,observ]*self.b_vec[t,k,0]
+					w1 = self.pi*self.link_prob_matrix[1,observ]*self.b_vec[t,k,1]
+					p = w1/(w1+w0)
+					X[t,k] = np.random.binomial(1,p)
+					init_pis[k] = p
+
+					# transit
+					for t in range(1,self.Tvec[k]):
+						# An special case because of constraint
+						if X[t-1,k] == 1:
+							X[t,k] = 1
+						else:
+							observ = int(self.observ_data[t,k])
+							w0 = self.transit_matrix[0,0]*self.link_prob_matrix[0,observ]*self.b_vec[t,k,0] 
+							w1 = self.transit_matrix[0,1]*self.link_prob_matrix[1,observ]*self.b_vec[t,k,1]
+							X[t,k] = np.random.binomial(1,w1/(w1+w0))
 								
 			elif sampling == 'FB':
 				
@@ -301,6 +304,7 @@ class BKT_HMM(object):
 					self.obs_type_info[key]['llk'] = self._get_llk(self.s, self.g, self.pi, self.l, [Os])
 									
 				# backward sampling
+				init_pis = np.zeros((self.K,1))
 				for k in range(self.K):
 					# check for the observation type
 					obs_key = self.obs_type_ref[k]
@@ -312,6 +316,8 @@ class BKT_HMM(object):
 						else:
 							next_state = int(X[t+1,k])
 							p = P_mat[t,1,next_state]/P_mat[t,:,next_state].sum()
+						if t == 0:
+							init_pis[k] = p
 						X[t,k] = np.random.binomial(1,p)
 
 			
@@ -334,25 +340,18 @@ class BKT_HMM(object):
 					obs_cnt[int(X[t,k]),int(self.observ_data[t,k])] += 1
 					
 			# Update 
-			ipdb.set_trace()
-			self.l =  np.random.beta(self.prior_param['l'][0]+critical_trans, 	self.prior_param['l'][1]+tot_trans-critical_trans)
-			self.pi = np.random.beta(self.prior_param['pi'][0]+sum(X[0,:]),		self.prior_param['pi'][1]+self.K-sum(X[0,:]))
-			self.s =  np.random.beta(self.prior_param['s'][0]+obs_cnt[1,0],		self.prior_param['s'][1]+obs_cnt[1,1])
-			self.g =  np.random.beta(self.prior_param['g'][0]+obs_cnt[0,1],		self.prior_param['g'][1]+obs_cnt[0,0])
-			
-			'''
-			while self.s>0.2:
-				self.s = np.random.beta(1+obs_cnt[1,0],9+obs_cnt[1,1])
-
-			while self.g>0.4:
-				self.g = np.random.beta(1+obs_cnt[0,1],3+obs_cnt[0,0])
-			'''
+			self.l =  np.random.beta(self.prior_param['l'][0] +critical_trans,self.prior_param['l'][1] +tot_trans-critical_trans)
+			self.pi = np.random.beta(self.prior_param['pi'][0]+sum(X[0,:]),	self.prior_param['pi'][1]+self.K-sum(X[0,:]))
+			self.s =  np.random.beta(self.prior_param['s'][0] +obs_cnt[1,0],	self.prior_param['s'][1] +obs_cnt[1,1])
+			self.g =  np.random.beta(self.prior_param['g'][0] +obs_cnt[0,1],	self.prior_param['g'][1] +obs_cnt[0,0])
+			self._update_derivative_parameter()
 			
 			# add to the MCMC chain
 			self.parameter_chain[iter,:] = [self.s, self.g, self.pi, self.l]
 			if iter%100 == 0:
 				print(iter)
-
+				
+				
 def update_mastery(mastery, learn_rate):
 	return mastery + (1-mastery)*learn_rate
 
@@ -377,12 +376,14 @@ if __name__ == '__main__':
 				  'g':np.random.uniform(0,0.5), 
 				  'pi':np.random.uniform(0,1),
 				  'l':np.random.uniform(0,1)}
-	'''
+	
+	
 	# Fix initial
-	init_param = {'s':0.1,
+	'''
+	init_param = {'s':0.18,
 				  'g':0.3, 
-				  'pi':0.5,
-				  'l':0.5}
+				  'pi':0.51,
+				  'l':0.17}
 	'''
 	
 	'''
@@ -418,7 +419,7 @@ if __name__ == '__main__':
 	'''
 	
 	import os
-	max_obs = 500
+	max_obs = 250
 	
 	proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))	
 	data_array = []
@@ -442,8 +443,7 @@ if __name__ == '__main__':
 	#ipdb.set_trace()
 	
 	x1 = BKT_HMM(init_param, method='MCMC-FB')
-	x1.estimate(data_array, L=500)
-	
+	x1.estimate(data_array, L=1000)
 	
 
 	
@@ -451,19 +451,19 @@ if __name__ == '__main__':
 	print(init_param['s'],init_param['g'],init_param['pi'],init_param['l'])
 	print('MCMC')	
 	print(x1.s, x1.g, x1.pi, x1.l)
-	print('EM')
-	print(x2.s, x2.g, x2.pi, x2.l)
+	#print('EM')
+	#print(x2.s, x2.g, x2.pi, x2.l)
 
 	
 	# check the learning curve difference
 	T = 5
 	true_lc = generate_learning_curve(0.05,0.2,0.4,0.3, T)
 	est_lc_1 = generate_learning_curve(x1.s,x1.g,x1.pi,x1.l, T)
-	est_lc_2 = generate_learning_curve(x2.s,x2.g,x2.pi,x2.l, T)
+	#est_lc_2 = generate_learning_curve(x2.s,x2.g,x2.pi,x2.l, T)
 	
 	print(true_lc)
 	print(est_lc_1)
-	print(est_lc_2)
+	#print(est_lc_2)
 	
 	# check the likelihood difference
 	
