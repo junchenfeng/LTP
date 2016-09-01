@@ -110,6 +110,7 @@ class BKT_HMM_MCMC(object):
 		# calcualte the llk for the parameters
 		gap = max(int((end-start)/100), 10) # the minimum gap is 10, otherwise take 100 samples
 		parameter_candidates = self.parameter_chain[range(start, end, gap), :]
+		'''
 		N = parameter_candidates.shape[0]
 		llk_vec = np.zeros((N,))
 		for i in range(N):
@@ -118,9 +119,10 @@ class BKT_HMM_MCMC(object):
 		llk_sum = logExpSum(llk_vec)
 		parameter_weight = np.exp(llk_vec - llk_sum)
 		
-		avg_parameter = np.dot(parameter_candidates.transpose(), parameter_weight)
-		
-		return avg_parameter.tolist()
+		avg_parameter = np.dot(parameter_candidates.transpose(), parameter_weight).tolist()
+		'''
+		avg_parameter = parameter_candidates.mean(axis=0).tolist()
+		return avg_parameter
 		
 	def estimate(self, init_param, data, max_iter=10):
 		
