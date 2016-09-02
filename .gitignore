@@ -8,7 +8,7 @@ pyMLC.egg-info
 data/hidden/*
 data/17data/*
 data/17zuoye/*
-
+data
 document/paper/manuscript.pdf
 
 ## Core latex/pdflatex auxiliary files:

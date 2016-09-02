@@ -9,12 +9,14 @@ from collections import defaultdict
 class BKT_HMM_EM(object):		
 			
 	def _load_observ(self, data):
+		# data = [(i,t,y,e)] where i is the spell sequence id from 0:N-1, t starts from 0
+		
 		self.K = len(set([x[0] for x in data]))
 		self.T = max([x[1] for x in data]) + 1
 		
 		self.observ_data = np.empty((self.T, self.K))
 		T_array = np.zeros((self.K,))
-		
+				
 		for log in data:
 			i = log[0]; t = log[1]; y = log[2]
 			self.observ_data[t, i] = y
@@ -77,26 +79,28 @@ class BKT_HMM_EM(object):
 		return gamma, gamma_raw
 	
 		
-	def estimate(self, init_param, data, max_iter=10):
+	def estimate(self, param, data, max_iter=10, print_on=False):
 	
-		self.g = init_param['g']  # guess
-		self.s = init_param['s']  # slippage
-		self.pi = init_param['pi']  # initial prob of mastery
-		self.l = init_param['l']  # learn speed
+		self.g = param['g']  # guess
+		self.s = param['s']  # slippage
+		self.pi = param['pi']  # initial prob of mastery
+		self.l = param['l']  # learn speed
 		
-		self.prior_param = {'l':[2,2],
-							's':[1,2],
-							'g':[1,2],
-							'pi':[2,2]}	
+
 		self._load_observ(data)
 		
 		#TODO: better convergence property
-		for i in range(max_iter):
+		for i in tqdm(range(max_iter)):
 			self._em_update()
+			if print_on:
+				print(self.s, self.g, self.pi, self.l)
 		
 		return self.s, self.g, self.pi, self.l
 			
 	def _em_update(self):
+		
+		# TODO: collapse states to speed up calculations 
+	
 		for k in range(self.K):
 			# update forward
 			for t in range(self.T_vec[k]):
@@ -141,7 +145,31 @@ class BKT_HMM_EM(object):
 		# update the derivatives
 		self._update_derivative_parameter()
 
+	def predict(self, param, data):
+		# this does not predict single state
+		self.g = param['g']  # guess
+		self.s = param['s']  # slippage
+		self.pi = param['pi']  # initial prob of mastery
+		self.l = param['l']  # learn speed
 		
+		self._load_observ(data)
+		
+		# calculate the forward factor
+		for k in range(self.K):
+			# update forward
+			for t in range(self.T_vec[k]):
+				self._update_forward(t, k, 0)
+				self._update_forward(t, k, 1)
+		
+		# calculate the posterior state distribution
+		output = []
+		for k in range(self.K):
+			for t in range(self.T_vec[k]-1):
+				x_t_posterior = self.a_vec[t,k,1]/self.a_vec[t,k,:].sum()
+				pyHat = ((1-x_t_posterior)*self.l + x_t_posterior)*(1-self.s) + (1-x_t_posterior)*(1-self.l)*self.g
+				y_true = self.observ_data[t+1,k]
+				output.append((pyHat, y_true))
+		return output
 
 		
 		
@@ -155,8 +183,8 @@ if __name__ == '__main__':
 	
 	data_array = [(0,0,0),(0,1,1)]
 	
-	x = BKT_HMM_EM(init_param)
-	x.estimate(data_array, L=1)	
+	x = BKT_HMM_EM()
+	x.estimate(init_param, data_array, max_iter=1)	
 
 	print('a vec')
 	print(x.a_vec)
@@ -174,7 +202,12 @@ if __name__ == '__main__':
 	print(x.eta_vec[0])
 	print(np.array([[0.242,0.467],[0,0.291]]))	
 	
-
+	# test for the forecast utility
+	forecast_array = [(0,0,0),(0,1,1),(0,2,1)]
+	pred_res = x.predict(init_param, forecast_array)
+	print(pred_res)
+	print([(0.48736842105263156, 1),(0.78146868250539958,1)])
+	
 
 	
 	

@@ -8,49 +8,77 @@ sys.path.append(proj_dir)
 from BKT.hmm_em import BKT_HMM_EM
 from BKT.hmm_mcmc import BKT_HMM_MCMC
 from BKT.hmm_survival_mcmc import BKT_HMM_SURVIVAL
-from BKT.util import generate_learning_curve
 
 import numpy as np
-from sklearn import metrics
 
 import ipdb
 
 
-def get_auc(s, g, pi, l, log_data):
-	# log data is of the format [(i,t,y[,e])]
 
-	ts = [int(log[1]) for log in log_data]
-	maxT = max(ts)
-	minT = min(ts)
-	T = maxT - minT + 1
-	N = len(log_data)
-	
-	# generate the learning curve
-	lc = generate_learning_curve(s, g, pi, l, T)
-	
-	y_true = np.zeros((N,))
-	y_pred = np.zeros((N,))
-	
-	
-	for i in range(N):
-		t = log_data[i][1]
-		y = log_data[i][2]
-		
-		y_true[i] = y 
-		y_pred[i] = lc[t]
+# output the true parameter for the simulated data
 
+# check if the data are correctly simulated
+data = []
+with open(proj_dir+'/data/bkt/test/single_sim.txt') as in_f0:
+	for line in in_f0:
+		i_s, t_s, y_s, x_s, is_e_s, is_a_s = line.strip().split(',')
+		data.append( (int(i_s), int(t_s), int(y_s), int(x_s), int(is_e_s), int(is_a_s)) )		
+N = data[-1][0]
 
-	fpr, tpr, thresholds = metrics.roc_curve(y_true, y_pred)
-	auc = metrics.auc(fpr, tpr)
+# s,g
+xynum = [[0.0, 0.0], [0.0, 0.0]]
+xnum = [0.0, 0.0]
+for log in data:
+	y = log[2]
+	x = log[3]
+	xnum[x] += 1
+	xynum[x][y] += 1
+sHat = xynum[1][0]/xnum[1]
+gHat = xynum[0][1]/xnum[0]
+			
+# learn
+transit = 0.0
+tot = 0
+for log in data:
+	x = log[3]
+	if log[1] > 0 and not prev_x:
+		transit += x
+		tot += 1
+	prev_x = x
+lHat = transit/tot
+
+# pi
+x1num = 0.0
+for log in data:
+	if log[1] == 0:
+		x1num += log[3]
+piHat = x1num/N
+
+# h1 vec
+h_cnt = np.zeros((5,2))
+s_cnt = np.zeros((5,2))
+
+for log in data:
+	t = log[1]
+	y = log[2]
+	e = log[4]
+	a = log[5]
+	if a:
+		h_cnt[t,y] += e
+		s_cnt[t,y] += 1-e
+hrate_mat = h_cnt/(h_cnt+s_cnt)	
+h0Hat = hrate_mat[:,0].tolist()
+h1Hat = hrate_mat[:,1].tolist()
+
+true_param = [sHat, gHat, piHat, lHat] + h0Hat + h1Hat
+with open(proj_dir+'/data/bkt/true_param.txt', 'w') as f0:
+	f0.write(','.join([str(x) for x in true_param])+'\n')
+
 	
-	r2 = (((y_true - y_pred)**2).mean())**(0.5)
-	return auc, r2
-
 ### (1) Load the data
-max_obs = 1000
-L = 1000
+max_obs = 2000
+L = 10000
 full_data_array = []
-data_cnt = 0
 with open(proj_dir+'/data/bkt/test/single_sim.txt') as f:
 	for line in f:
 		i_s, t_s, y_s, x_s, is_e_s, is_a_s = line.strip().split(',')
@@ -60,10 +88,8 @@ with open(proj_dir+'/data/bkt/test/single_sim.txt') as f:
 		
 		#if int(is_a_s):
 		full_data_array.append( (int(i_s), int(t_s), int(y_s)) )	
-		data_cnt += 1
 
 incomplete_data_array = []
-data_cnt = 0
 with open(proj_dir+'/data/bkt/test/single_sim.txt') as f:
 	for line in f:
 		i_s, t_s, y_s, x_s, is_e_s, is_a_s = line.strip().split(',')
@@ -73,7 +99,6 @@ with open(proj_dir+'/data/bkt/test/single_sim.txt') as f:
 		
 		if int(is_a_s):
 			incomplete_data_array.append( (int(i_s), int(t_s), int(y_s), int(is_e_s)) )	
-		data_cnt += 1
 
 		
 
@@ -93,8 +118,8 @@ init_param = {'s': 1-np.array(yTs).mean(),
 			  'g': 0.3, 
 			  'pi': np.array(y0s).mean(),
 			  'l': np.array(y1s).mean() - np.array(y0s).mean(),
-			  'h0': [0.0]*5,
-			  'h1': [0.0]*5
+			  'h0': [0.01]*5,
+			  'h1': [0.01]*5
 			  }
 
 
@@ -127,7 +152,7 @@ with open(proj_dir+'/data/bkt/full_point_estimation.txt', 'w') as f1:
 
 np.savetxt(proj_dir+'/data/bkt/full_mcmc_parameter_chain.txt', mcmc_instance.parameter_chain, delimiter=',')	
 np.savetxt(proj_dir+'/data/bkt/full_mcmc_survival_parameter_chain.txt', survival_mcmc_instance.parameter_chain, delimiter=',')
-	
+
 ### (4) Section 2: Single Factor Incomplete Spell
 y0s = [log[2] for log in incomplete_data_array if log[1]==0]
 y1s = [log[2] for log in incomplete_data_array if log[1]==1]
@@ -137,8 +162,8 @@ h0 = []
 h1 = []
 for t in range(5):
 	EYs = [(log[2], log[3]) for log in incomplete_data_array if log[1]==t]
-	h1.append( sum([x[1] for x in EYs if x[0]==1]) / len([x[0] for x in EYs if x[0]==1]) )
-	h0.append( sum([x[1] for x in EYs if x[0]==0]) / len([x[0] for x in EYs if x[0]==0]) )
+	h1.append( max(min(sum([x[1] for x in EYs if x[0]==1]) / len([x[0] for x in EYs if x[0]==1]),0.99),0.01) )
+	h0.append( max(min(sum([x[1] for x in EYs if x[0]==0]) / len([x[0] for x in EYs if x[0]==0]),0.99),0.01) )
 
 init_param = {'s': 1-np.array(yTs).mean(),
 			  'g': 0.3, 
@@ -150,7 +175,6 @@ init_param = {'s': 1-np.array(yTs).mean(),
 em_s, em_g, em_pi, em_l = em_instance.estimate(init_param, incomplete_data_array, max_iter = 20)
 mcmc_s, mcmc_g, mcmc_pi, mcmc_l = mcmc_instance.estimate(init_param, incomplete_data_array, max_iter = L)
 mcmc_s_s, mcm_s_g, mcmc_s_pi, mcmc_s_l, mcmc_s_h0, mcmc_s_h1 = survival_mcmc_instance.estimate(init_param, incomplete_data_array, max_iter = L)
-
 print('Incomplete Data')
 print('Point estimation')
 print(init_param['s'], init_param['g'], init_param['pi'], init_param['l'], init_param['h0'], init_param['h1'])
@@ -171,8 +195,16 @@ print(mcmc_r2)
 print(mcmc_s_r2)
 	
 with open(proj_dir+'/data/bkt/incomplete_point_estimation.txt', 'w') as f4:
-	f4.write('em,%f,%f,%f,%f,%f,%f\n' %(em_s, em_g, em_pi, em_l, 0.0, 0.0))
-	f4.write('mcmc,%f,%f,%f,%f,%f,%f\n' %(mcmc_s, mcmc_g, mcmc_pi, mcmc_l, 0.0, 0.0))
+	f4.write('em,%f,%f,%f,%f' %(em_s, em_g, em_pi, em_l))
+	for x in mcmc_s_h0+mcmc_s_h1:
+		f4.write(',%f' % 0.0)	
+	f4.write('\n')
+		
+	f4.write('mcmc,%f,%f,%f,%f' %(mcmc_s, mcmc_g, mcmc_pi, mcmc_l))
+	for x in mcmc_s_h0+mcmc_s_h1:
+		f4.write(',%f' % 0.0)	
+	f4.write('\n')
+	
 	f4.write('mcmc_s,%f,%f,%f,%f' %(mcmc_s_s, mcm_s_g, mcmc_s_pi, mcmc_s_l))
 	for x in mcmc_s_h0+mcmc_s_h1:
 		f4.write(',%f' % x)

@@ -48,50 +48,7 @@ for i in range(N):
 	
 		data.append((i, t, y, S, end_of_spell, is_observ))
 		
-# check if the data are correctly simulated
-# learn
-transit = 0.0
-tot = 0
-for log in data:
-	x = log[3]
-	if log[1] > 0 and not prev_x:
-		transit += x
-		tot += 1
-	prev_x = x
-print(l, transit/tot)
 
-# pi
-x1num = 0.0
-for log in data:
-	if log[1] == 0:
-		x1num += log[3]
-print(pi, x1num/N)
-
-# s,g
-xynum = [[0.0, 0.0], [0.0, 0.0]]
-xnum = [0.0, 0.0]
-for log in data:
-	y = log[2]
-	x = log[3]
-	xnum[x] += 1
-	xynum[x][y] += 1
-print(s, xynum[1][0]/xnum[1])
-print(g, xynum[0][1]/xnum[0])
-
-# h1 vec
-h_cnt = np.zeros((5,2))
-s_cnt = np.zeros((5,2))
-
-for log in data:
-	t = log[1]
-	y = log[2]
-	e = log[4]
-	a = log[5]
-	if a:
-		h_cnt[t,y] += e
-		s_cnt[t,y] += 1-e
-print(hazard_matrix)
-print(h_cnt/(h_cnt+s_cnt))
 		
 with open(proj_dir + '/data/bkt/test/single_sim.txt','w') as f:
 	for log in data:

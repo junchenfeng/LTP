@@ -15,6 +15,7 @@ def logExpSum(llk_vec):
 class BKT_HMM_MCMC(object):
 			
 	def _load_observ(self, data):
+		# data = [(i,t,y,e)] where i is the spell sequence id from 0:N-1, t starts from 0
 		self.K = len(set([x[0] for x in data]))
 		self.T = max([x[1] for x in data]) + 1
 		
