@@ -15,7 +15,7 @@ import ipdb
 
 
 # output the true parameter for the simulated data
-file_path = proj_dir+'/data/bkt/test/single_sim_x.txt'
+file_path = proj_dir+'/data/bkt/test/single_sim_x_1.txt'
 # check if the data are correctly simulated
 data = []
 with open(file_path) as in_f0:
