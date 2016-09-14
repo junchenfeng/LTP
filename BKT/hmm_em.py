@@ -130,15 +130,24 @@ class BKT_HMM_EM(object):
 		#ipdb.set_trace()	
 		self.pi = self.r_vec[0,:,1].mean()
 		
-		#denominator = np.dot((self.a_vec[0:t-1,:,0]*self.b_vec[0:t-1,:,0]).sum(axis=0), obs_weight) # sum(P(X^k_t=i|O^k))
-		self.l = np.dot(self.eta_vec_uncond[:,:,0,1].sum(axis=0), obs_weight) / np.dot(self.r_vec_uncond[:,:,0].sum(axis=0), obs_weight)  # transit from 0 to 1
 		
+		nominator = 0
+		denominator = 0
+		for k in range(self.K):
+			nominator += self.eta_vec_uncond[0:self.T_vec[k]-1,k,0,1].sum() * obs_weight[k]
+			denominator += self.r_vec_uncond[0:self.T_vec[k]-1,k,0].sum() * obs_weight[k]
+		
+		self.l = nominator/denominator
+		
+		#self.l = np.dot(self.eta_vec_uncond[:,:,0,1].sum(axis=0), obs_weight) / np.dot(self.r_vec_uncond[:,:,0].sum(axis=0), obs_weight) 
+		#ipdb.set_trace()
 		# need to count the right and wrong
 		self.tmp = np.zeros((self.T, self.K,2))
 		for k in range(self.K):
 			for t in range(self.T_vec[k]):
 				observ = int(self.observ_data[t, k])
 				self.tmp[t, k, observ] = self.r_vec_uncond[t, k, 1-observ]
+				
 		self.s = np.dot(self.tmp[:,:,0].sum(axis=0), obs_weight) / np.dot(self.r_vec_uncond[:,:,1].sum(axis=0), obs_weight) # observe 0 when state is 1
 		self.g = np.dot(self.tmp[:,:,1].sum(axis=0), obs_weight) / np.dot(self.r_vec_uncond[:,:,0].sum(axis=0), obs_weight) # observe 1 when state is 0
 		
@@ -209,5 +218,5 @@ if __name__ == '__main__':
 	print([(0.48736842105263156, 1),(0.78146868250539958,1)])
 	
 
-	
+	#TODO: unit test on two sequence with different length 
 	

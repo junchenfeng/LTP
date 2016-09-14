@@ -11,8 +11,8 @@ g = 0.2
 pi = 0.7
 l = 0.3
 
-h1_vec = [0.3, 0.3, 0.4, 0.4, 0.5]
-h0_vec = [0.4, 0.5, 0.6, 0.6, 0.6]
+h1_vec = [0.05, 0.1, 0.15, 0.2, 0.25]
+h0_vec = [0.1, 0.2, 0.3, 0.4, 0.5]
 
 # sim parameters
 N = 2000
@@ -43,13 +43,13 @@ for i in range(N):
 		# the end of the spell check is later than the is_observ check so that the last spell is observed
 		if end_of_spell == 0:
 			# check if the spell terminates
-			if np.random.uniform() < hazard_matrix[y,t]:
+			if np.random.uniform() < hazard_matrix[S,t]:
 				end_of_spell = 1
 	
 		data.append((i, t, y, S, end_of_spell, is_observ))
 		
 
 		
-with open(proj_dir + '/data/bkt/test/single_sim.txt','w') as f:
+with open(proj_dir + '/data/bkt/test/single_sim_x.txt','w') as f:
 	for log in data:
 		f.write('%d,%d,%d,%d,%d,%d\n' % log)

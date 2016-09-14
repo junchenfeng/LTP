@@ -58,8 +58,8 @@ for t in range(5):
 	else:
 		h0val = 0.5
 	
-	h1.append( max(min(h1val, 0.99), 0.01) )
-	h0.append( max(min(h0val, 0.99), 0.01) )
+	h1.append( max(min(h1val, 0.5), 0.1) )
+	h0.append( max(min(h0val, 0.5), 0.1) )
 
 init_param = {'s': max(1-np.array(yTs).mean(), 0.01),
 			  'g': 0.3, 
@@ -68,15 +68,22 @@ init_param = {'s': max(1-np.array(yTs).mean(), 0.01),
 			  'h0': h0,
 			  'h1': h1}
 
-
+L = 1000
 em_s, em_g, em_pi, em_l = em_instance.estimate(init_param, data_array, max_iter = 10)
-mcmc_s_s, mcm_s_g, mcmc_s_pi, mcmc_s_l, mcmc_s_h0, mcmc_s_h1 = survival_mcmc_instance.estimate(init_param, data_array, max_iter = 1000)
+mcmc_s_s, mcm_s_g, mcmc_s_pi, mcmc_s_l, mcmc_s_h0, mcmc_s_h1 = survival_mcmc_instance.estimate(init_param, data_array, max_iter = L)
 
 print('Full Data')
 print('point estimation')
 print(init_param['s'],init_param['g'],init_param['pi'],init_param['l'])
 print(em_s, em_g, em_pi, em_l)
-print(mcmc_s_s, mcm_s_g, mcmc_s_pi, mcmc_s_l, mcmc_s_h0, mcmc_s_h1)
+print(mcmc_s_s, mcm_s_g, mcmc_s_pi, mcmc_s_l)
+
+print('hazard rate')
+print(h0)
+print(h1)
+
+print(mcmc_s_h0)
+print(mcmc_s_h1)
 
 
 
