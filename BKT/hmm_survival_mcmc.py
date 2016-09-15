@@ -20,7 +20,7 @@ def survivial_llk(h,E):
 def state_llk(X, J, init_dist, transit_matrix):
 	# X: vector of latent state, list
 	# transit matrix is np array [t-1,t]
-	prob = init_dist[X[0]] * np.product([transit_matrix[J[t], X[t-1], X[t]] for t in range(1, len(X))])
+	prob = init_dist[X[0]] * np.product([transit_matrix[J[t-1], X[t-1], X[t]] for t in range(1, len(X))])
 
 	return prob
 	
@@ -100,7 +100,7 @@ class BKT_HMM_SURVIVAL(object):
 		self.observ_data = np.empty((self.T, self.K), dtype=np.int)
 		self.item_data = np.empty((self.T, self.K), dtype=np.int)
 		T_array = np.zeros((self.K,))
-		
+				
 		for log in data:
 			if len(log)==4:
 				# The spell never ends; multiple item
@@ -149,7 +149,7 @@ class BKT_HMM_SURVIVAL(object):
 		
 		return pi_vec
 			
-	def __update_P(self, t, E, observ, item_id, pi_vec, P_mat):
+	def __update_P(self, t, E, observ, item_id_l, item_id_O, pi_vec, P_mat):
 		p_raw = np.zeros((2,2))
 		
 		if not E:
@@ -159,10 +159,10 @@ class BKT_HMM_SURVIVAL(object):
 			pa0 = self.hazard_matrix[0, t+1]
 			pa1 = self.hazard_matrix[1, t+1]
 			
-		p_raw[0,0] = max(pi_vec[t,0] * self.state_transit_matrix[item_id,0,0] * self.observ_prob_matrix[item_id,0,observ] * pa0, 0.0)
-		p_raw[0,1] = max(pi_vec[t,0] * self.state_transit_matrix[item_id,0,1] * self.observ_prob_matrix[item_id,1,observ] * pa1, 0.0)
-		#p_raw[1,0] = max(pi_vec[t,1] * self.state_transit_matrix[item_id,1,0] * self.observ_prob_matrix[item_id,0,observ] * pa0, 0.0)  # no forget
-		p_raw[1,1] = max(pi_vec[t,1] * self.state_transit_matrix[item_id,1,1] * self.observ_prob_matrix[item_id,1,observ] * pa1, 0.0)
+		p_raw[0,0] = max(pi_vec[t,0] * self.state_transit_matrix[item_id_l,0,0] * self.observ_prob_matrix[item_id_O,0,observ] * pa0, 0.0)
+		p_raw[0,1] = max(pi_vec[t,0] * self.state_transit_matrix[item_id_l,0,1] * self.observ_prob_matrix[item_id_O,1,observ] * pa1, 0.0)
+		#p_raw[1,0] = max(pi_vec[t,1] * self.state_transit_matrix[item_id_l,1,0] * self.observ_prob_matrix[item_id_O,0,observ] * pa0, 0.0)  # no forget
+		p_raw[1,1] = max(pi_vec[t,1] * self.state_transit_matrix[item_id_l,1,1] * self.observ_prob_matrix[item_id_O,1,observ] * pa1, 0.0)
 		
 		P_mat[t,:,:] = p_raw/p_raw.sum()
 		return P_mat		
@@ -196,15 +196,15 @@ class BKT_HMM_SURVIVAL(object):
 			T = len(Os)
 			
 			# if there is a only 1 observations, the P matrix does not exist, pi vector will the first observation
-
 			pi_vec = np.zeros((T,2))
 			P_mat = np.zeros((T-1,2,2))
 			for t in range(T):
 				Et = get_E(E,t,T)
+				# the transit matrix from t to t+1 is the learning outcome of item occured at t, but with the observations from t+1. Therefore needs the information on two items
 				pi_vec = self.__update_pi(t,  Et, Os[t], Js[t], pi_vec, P_mat)
 				if t !=T-1 and T!=1:
 					Et = get_E(E,t+1,T-1)
-					P_mat = self.__update_P(t, Et, Os[t+1], Js[t+1], pi_vec, P_mat)
+					P_mat = self.__update_P(t, Et, Os[t+1], Js[t], Js[t+1], pi_vec, P_mat)
 			self.obs_type_info[key]['pi'] = pi_vec
 			self.obs_type_info[key]['P'] = P_mat
 		
@@ -278,14 +278,17 @@ class BKT_HMM_SURVIVAL(object):
 			
 			for k in range(self.K):
 				for t in range(0, self.T_vec[k]):
-					j = self.item_data[t,k]
+					l_j = self.item_data[t-1,k]
+					o_j = self.item_data[t,k]
+					# if the transition happens at t, item in t-1 should take the credit
+					# The last item does not contribute the the learning rate
 					# update l
 					if t>0 and X[t-1,k] == 0:
-						tot_trans[j] += 1
+						tot_trans[l_j] += 1
 						if X[t,k] == 1:
-							critical_trans[j] += 1
+							critical_trans[l_j] += 1
 					# update obs_cnt
-					obs_cnt[j, X[t,k], self.observ_data[t,k]] += 1
+					obs_cnt[o_j, X[t,k], self.observ_data[t,k]] += 1
 			
 			for t in range(self.T):
 				# for data survived in last period, check the harzard rate
@@ -293,7 +296,6 @@ class BKT_HMM_SURVIVAL(object):
 					if self.T_vec[k]>=t and  self.E_array[t-1,k] == 0:
 						drop_cnt[X[t,k], t] += self.E_array[t,k]
 						survive_cnt[X[t,k], t] += 1-self.E_array[t,k]
-			#ipdb.set_trace()
 			for j in range(self.J):
 				self.l[j] =  np.random.beta(self.prior_param['l'][0]+critical_trans[j], self.prior_param['l'][1]+tot_trans[j]-critical_trans[j])
 				self.s[j] =  np.random.beta(self.prior_param['s'][0]+obs_cnt[j,1,0], self.prior_param['s'][1]+obs_cnt[j,1,1])
@@ -377,7 +379,7 @@ class BKT_HMM_SURVIVAL(object):
 		self._load_observ(data_array)
 		self._MCMC(max_iter, method)
 		res = self._get_point_estimation(int(max_iter/2), max_iter)
-		ipdb.set_trace()
+		#ipdb.set_trace()
 		self.pi = res[0]; self.s = res[1:1+self.J]; self.g = res[1+self.J:1+self.J*2]; self.l = res[1+self.J*2:1+self.J*3]
 		self.h0 = res[1+self.J*3:1+self.J*3+self.T]; self.h1 = res[1+self.J*3+self.T:]	
 		
@@ -442,7 +444,7 @@ class BKT_HMM_SURVIVAL(object):
 if __name__=='__main__':
 	# UNIT TEST
 	
-	
+	'''
 	########################
 	#    Single Item Test  #
 	########################
@@ -577,7 +579,7 @@ if __name__=='__main__':
 	
 	# marginal period 3
 	print(pi_vec[2,0], 0.002032128/0.005272027)
-	
+	'''
 	
 	########################
 	#  Multiple Item Test  #
@@ -589,7 +591,7 @@ if __name__=='__main__':
 	h0 = [0.1, 0.2, 0.3]
 	h1 = [0, 0.05, 0.1]
 	
-	J = [0,1,0]
+	J = [1,0,0]
 	nJ = 2	
 	
 	state_init_dist = np.array([1-pi, pi]) 
@@ -601,40 +603,40 @@ if __name__=='__main__':
 	O = [1,0,1]
 	E = 0
 	#px = 0.6*0.43*1
-	#po = 0.2*0.3*0.95
+	#po = 0.4*0.05*0.95
 	#pa = (1-0.1)*(1-0.05)*(1-0.1)
-	#prob = 0.6*0.43*1*0.2*0.3*0.95*(1-0.1)*(1-0.05)*(1-0.1)
+	#prob = 0.6*0.43*1*0.4*0.05*0.95*(1-0.1)*(1-0.05)*(1-0.1)
 	prob = likelihood(X, O, J, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix)
-	print([prob,0.011316267])
+	print([prob,0.003772089])
 	
 	E = 1
 	#pa = (1-0)*(1-0.2)*0.1
-	#prob = 0.6*0.43*1*0.2*0.3*0.95*(1-0.1)*(1-0.05)*0.1
+	#prob = 0.6*0.43*1*0.4*0.05*0.95*(1-0.1)*(1-0.05)*0.1
 	prob = likelihood(X, O, J, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix)
-	print([prob,0.001257363])
+	print([prob,0.000419121])
 	
 	E = 0
 	X = [1,1,1]
 	# px = 0.4*1*1
-	# po = 0.95*0.3*0.95
+	# po = 0.7*0.05*0.95
 	# pa = (1-0.0)*(1-0.05)*(1-0.1)
-	# prob = 0.4*1*1*0.95*0.3*0.95*(1-0.0)*(1-0.05)*(1-0.1)
+	# prob = 0.4*1*1*0.7*0.05*0.95*(1-0.0)*(1-0.05)*(1-0.1)
 	prob = likelihood(X, O, J, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix)
-	print([prob,0.0925965])
+	print([prob,0.0113715])
 	
 	E = 1
 	X = [1,1,1]
 	# px = 0.4*1*1
-	# po = 0.95*0.3*0.95
+	# po = 0.7*0.05*0.95
 	# pa = 1*0.8*0.1
-	# prob = 0.4*1*1*0.95*0.3*0.95*(1-0.0)*(1-0.05)*0.1
+	# prob = 0.4*1*1*0.7*0.05*0.95*(1-0.0)*(1-0.05)*0.1
 	prob = likelihood(X, O, J, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix)
-	print([prob,0.102885])	
+	print([prob,0.0012635])	
 	
 	
 	
 	############ DG|Marginal Probability
-	data_array = [(0,0,0,1,0),(0,1,1,0,0),(0,2,0,1,1)] # E=1, O=[1,0,1], J = [0,1,0]
+	data_array = [(0,0,1,1,0),(0,1,0,0,0),(0,2,0,1,1)] # E=1, O=[1,0,1], J = [0,1,0]
 	init_param = {'s':s,
 			  'g':g, 
 			  'pi':pi,
@@ -646,29 +648,28 @@ if __name__=='__main__':
 	x1 = BKT_HMM_SURVIVAL()
 	x1.estimate(init_param, data_array, method = 'DG', max_iter=1)
 	
-	llk_vec = np.array( x1.obs_type_info['1-1|0|1-0|1|0']['llk_vec'] )
+	llk_vec = np.array( x1.obs_type_info['1-1|0|1-1|0|0']['llk_vec'] )
 	X_mat = generate_possible_states(3)
 	
 	# all four possible states are 
-	# 1,1,1: 0.4*1*1*	0.95*0.3*0.95*		1*0.95*0.1 = 0.0102885
-	# 0,1,1: 0.6*0.43*1*   0.2*0.3*0.95*	0.9*0.95*0.1 = 0.001257363
-	# 0,0,1: 0.6*0.57*0.3* 0.2*0.6*0.95*	0.9*0.8*0.1 = 0.0008421408
-	# 0,0,0: 0.6*0.57*0.7* 0.2*0.6*0.2*		0.9*0.8*0.3 = 0.0012410496
+	# 1,1,1: 0.4*1*1*	0.7*0.05*0.95*		1*0.95*0.1 = 0.0012635
+	# 0,1,1: 0.6*0.43*1*   0.4*0.05*0.95*	0.9*0.95*0.1 = 0.000419121
+	# 0,0,1: 0.6*0.57*0.3* 0.4*0.8*0.95*	0.9*0.8*0.1 = 0.0022457088
+	# 0,0,0: 0.6*0.57*0.7* 0.4*0.8*0.2*		0.9*0.8*0.3 = 0.0033094656
 	
-	#P(O,E) = 0.0136290534
+	#P(O,E) = 0.0072377954
 	
 	# single state marginal
-	print(get_single_state_llk(X_mat, llk_vec, 0, 0)/llk_vec.sum(), (0.001257363+0.0008421408+0.0012410496)/0.0136290534) # 0.62645
-	print(get_single_state_llk(X_mat, llk_vec, 0, 1)/llk_vec.sum(), 0.0102885/0.0136290534) # 0.37355
-	print(get_single_state_llk(X_mat, llk_vec, 1, 0)/llk_vec.sum(), (0.0008421408+0.0012410496)/0.0136290534) # 0.59106
-	print(get_single_state_llk(X_mat, llk_vec, 1, 1)/llk_vec.sum(), (0.0102885+0.001257363)/0.0136290534) # 0.40894
+	print(get_single_state_llk(X_mat, llk_vec, 0, 0)/llk_vec.sum(), (0.000419121+0.0022457088+0.0033094656)/0.0072377954) # 0.62645
+	print(get_single_state_llk(X_mat, llk_vec, 0, 1)/llk_vec.sum(), 0.0012635/0.0072377954) # 0.37355
+	print(get_single_state_llk(X_mat, llk_vec, 1, 0)/llk_vec.sum(), (0.0022457088+0.0033094656)/0.0072377954) # 0.59106
+	print(get_single_state_llk(X_mat, llk_vec, 1, 1)/llk_vec.sum(), (0.0012635+0.000419121)/0.0072377954) # 0.40894
 	
 	# two states marginal
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 0)/llk_vec.sum(), (0.0008421408+0.0012410496)/0.0136290534)# 
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 1)/llk_vec.sum(), 0.001257363/0.0136290534)# 0.0001368/(0.0001368+0.00153216+0.00075264)
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 0)/llk_vec.sum(), (0.0022457088+0.0033094656)/0.0072377954)# 
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 1)/llk_vec.sum(), 0.000419121/0.0072377954)# 0.0001368/(0.0001368+0.00153216+0.00075264)
 	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 0)/llk_vec.sum(), 0)# 0
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 1)/llk_vec.sum(), 0.0102885/0.0136290534)# 1
-	
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 1)/llk_vec.sum(), 0.0012635/0.0072377954)# 1
 	
 	################ FB
 	# the last pi vector should be the posterior distribution of state in the last period
@@ -690,25 +691,29 @@ if __name__=='__main__':
 	x2.estimate(init_param, data_array, method = 'FB', max_iter=1)
 	
 	X_mat = generate_possible_states(3)	
-	pi_vec = x2.obs_type_info['1-1|0|1-0|1|0']['pi']
-	# P(X_1=1,Y_1,O_1) = 0.4*0.95*1 = 0.38
-	# P(X_1=0,Y_1,O_1) = 0.6*0.2*0.9 = 0.108
-	print(pi_vec[0,0],0.22131147540983606)
+	pi_vec = x2.obs_type_info['1-1|0|1-1|0|0']['pi']
+	# P(X_1=1,Y_1=1,E_1=0) = 0.4*0.7*1 = 0.28
+	# P(X_1=0,Y_1=1,E_1=0) = 0.6*0.4*0.9 = 0.216
+	print(pi_vec[0,0], 0.435483870968)
 	
 	# First transition 
-	P_mat = x2.obs_type_info['1-1|0|1-0|1|0']['P']
-	# P(X_2=1,X_1=0,Y_1=1,Y_2=0,E_2=0) = 0.108/(0.108+0.38)*0.43*0.3*0.95  = .0271217213114754
-	# P(X_2=0,X_1=0,Y_1=1,Y_2=0,E_2=0) = 0.108/(0.108+0.38)*0.57*0.6*0.8 = .060550819672131134
-	# P(X_2=1,X_1=1,Y_1=1,Y_2=0,E_2=0) =  0.38/(0.108+0.38)*1*0.3*0.95 = .221926229508197
-	print(P_mat[0][0,0], 0.060550819672131134/0.3095987704918035) 
-	# (0.108/(0.108+0.38)*0.57*0.6*0.9)/((0.108/(0.108+0.38)*0.43*0.3*0.95)+(0.108/(0.108+0.38)*0.57*0.6*0.9)+(0.38/(0.108+0.38)*1*0.3*0.95))
+	P_mat = x2.obs_type_info['1-1|0|1-1|0|0']['P']
+	# P(X_2=1,X_1=0,Y_1=1,Y_2=0,E_2=0) = 0.435483870968*0.43*0.05*0.95  = 0.0088947580645214
+	# P(X_2=0,X_1=0,Y_1=1,Y_2=0,E_2=0) = 0.435483870968*0.57*0.8*0.8 = 0.158864516129126
+	# P(X_2=1,X_1=1,Y_1=1,Y_2=0,E_2=0) =  (1-0.435483870968)*1*0.05*0.95 = 0.02681451612902
+	print(P_mat[0][0,0], 0.158864516129126/0.194573790322667) 
 	
 	# marginal period 2
-	#P(X2=1,X1=1,Y1=1,Y2=0,E2=0) = 0.4*	1  *0.95*0.3*(1-0)*(1-0.05) = .1083
-	#P(X2=1,X1=0,Y1=1,Y2=0,E2=0) = 0.6*0.43*0.2 *0.3*(1-0.1)*(1-0.05) = .0132354
-	#P(X2=0,X1=0,Y1=1,Y2=0,E2=0) = 0.6*0.57*0.2 *0.6*(1-0.1)*(1-0.2) = .0295488
-	print(pi_vec[1,0], 0.0295488/0.1510842)
+	#P(X2=1,X1=1,Y1=1,Y2=0,E2=0) = 0.4*	1  *0.7 *0.05*(1-0)*(1-0.05) = 0.0133
+	#P(X2=1,X1=0,Y1=1,Y2=0,E2=0) = 0.6*0.43*0.4 *0.05*(1-0.1)*(1-0.05) = .0044118
+	#P(X2=0,X1=0,Y1=1,Y2=0,E2=0) = 0.6*0.57*0.4 *0.8*(1-0.1)*(1-0.2) = .0787968
+	print(pi_vec[1,0], 0.0787968/0.0965086)
 	
 	# marginal period 3
-	print(pi_vec[2,0], 0.0012410496/0.0136290534)
+	print(pi_vec[2,0], 0.0033094656/0.0072377954)
+	
+	
+	#############################
+	#  Multiple Item with Skip  #
+	#############################
 		

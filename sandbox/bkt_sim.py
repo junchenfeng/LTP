@@ -34,12 +34,9 @@ for i in range(N):
 	is_observ = 1
 	for t in range(T):
 		if t ==0:
-			S = int( np.random.binomial(1, state_init_dist[1]) )
-		else:
-			S = int( np.random.binomial(1, state_transit_matrix[S, 1]) )
-		
+			S = int( np.random.binomial(1, state_init_dist[1]) )		
 		y = int( np.random.binomial(1, observ_matrix[S, 1]) )
-				
+					
 		# update if observed
 		if end_of_spell == 1:
 			is_observ = 0
@@ -50,6 +47,9 @@ for i in range(N):
 				end_of_spell = 1
 	
 		data.append((i, t, j, y, S, end_of_spell, is_observ))
+		
+		# update the state for the next period
+		S = int( np.random.binomial(1, state_transit_matrix[S, 1]) )	
 		
 
 		
@@ -78,7 +78,6 @@ observ_prob_matrix =  np.stack([ np.array([[1-g[j], g[j]], [s[j], 1-s[j]]])  for
 hazard_matrix = np.array([h0_vec, h1_vec])	
 
 
-data = []
 for i in range(N):
 	end_of_spell = 0
 	is_observ = 1
@@ -88,15 +87,13 @@ for i in range(N):
 			j = 0
 		else:
 			j = 1
-			
+		
 		if t ==0:
 			S = int( np.random.binomial(1, state_init_dist[1]) )
-		else:
-			S = int( np.random.binomial(1, state_transit_matrix[j, S, 1]) )
-
-		
+			
 		y = int( np.random.binomial(1, observ_prob_matrix[j, S, 1]) )
-				
+		
+		
 		# update if observed
 		if end_of_spell == 1:
 			is_observ = 0
@@ -107,6 +104,27 @@ for i in range(N):
 				end_of_spell = 1
 	
 		data.append((i, t, j, y, S, end_of_spell, is_observ))
+		
+		# update the state for the next period
+		if S==0:
+			p = state_transit_matrix[j, S, 1]
+			S = int( np.random.binomial(1, p))
+print(crit_trans/tot_trans)
+ipdb.set_trace()
+# check the consistency of learning rate
+tot_trans = np.zeros((2,))
+crit_trans = np.zeros((2,))
+for m in range(len(data)):
+	i,t,j,y,S,e,a = data[m]
+	if t>0 and t<4 and S==0:
+		tot_trans[j]+=1
+		if data[m+1][4] == 1:
+			crit_trans[j]+=1
+print(crit_trans/tot_trans)
+		
+		
+	
+		
 		
 with open(proj_dir + '/data/bkt/test/single_sim_x_2.txt','w') as f:
 	for log in data:

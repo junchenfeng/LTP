@@ -7,7 +7,6 @@ import numpy as np
 
 file_path = proj_dir+'/data/bkt/test/single_sim_x_2.txt'
 
-
 max_obs = 1000
 full_data_array = []
 with open(file_path) as f:
@@ -40,13 +39,16 @@ init_param = {'s': [0.1]*2,
 			  'h1': [0.01]*5
 			  }
 
-L = 1000			  
+L = 500			  
 mcmc_s_pi, mcmc_s_s, mcm_s_g, mcmc_s_l, mcmc_s_h0, mcmc_s_h1 = survival_mcmc_instance.estimate(init_param, full_data_array, max_iter = L)
 
 print('Full Data')
 print('point estimation')
 #print(sHat, gHat, piHat, lHat)
-print(mcmc_s_s, mcm_s_g, mcmc_s_pi, mcmc_s_l)
+print(mcmc_s_s)
+print(mcm_s_g)
+print(mcmc_s_pi)
+print(mcmc_s_l)
 
 '''
 print('h0')
