@@ -9,7 +9,7 @@ from collections import defaultdict
 class BKT_HMM_EM(object):		
 			
 	def _load_observ(self, data):
-		# data = [(i,t,y,e)] where i is the spell sequence id from 0:N-1, t starts from 0
+		# data = [(i,t,j,y,e)] where i is the spell sequence id from 0:N-1, t starts from 0
 		
 		self.K = len(set([x[0] for x in data]))
 		self.T = max([x[1] for x in data]) + 1
@@ -18,7 +18,7 @@ class BKT_HMM_EM(object):
 		T_array = np.zeros((self.K,))
 				
 		for log in data:
-			i = log[0]; t = log[1]; y = log[2]
+			i = log[0]; t = log[1]; y = log[3]
 			self.observ_data[t, i] = y
 			T_array[i] = t
 		
@@ -81,10 +81,10 @@ class BKT_HMM_EM(object):
 		
 	def estimate(self, param, data, max_iter=10, print_on=False):
 	
-		self.g = param['g']  # guess
-		self.s = param['s']  # slippage
+		self.g = param['g'][0]  # guess
+		self.s = param['s'][0]  # slippage
 		self.pi = param['pi']  # initial prob of mastery
-		self.l = param['l']  # learn speed
+		self.l = param['l'][0]  # learn speed
 		
 
 		self._load_observ(data)
@@ -100,7 +100,6 @@ class BKT_HMM_EM(object):
 	def _em_update(self):
 		
 		# TODO: collapse states to speed up calculations 
-	
 		for k in range(self.K):
 			# update forward
 			for t in range(self.T_vec[k]):
@@ -142,13 +141,14 @@ class BKT_HMM_EM(object):
 		#self.l = np.dot(self.eta_vec_uncond[:,:,0,1].sum(axis=0), obs_weight) / np.dot(self.r_vec_uncond[:,:,0].sum(axis=0), obs_weight) 
 		#ipdb.set_trace()
 		# need to count the right and wrong
-		self.tmp = np.zeros((self.T, self.K,2))
+		self.tmp = np.zeros((self.T, self.K, 2))
 		for k in range(self.K):
 			for t in range(self.T_vec[k]):
 				observ = int(self.observ_data[t, k])
 				self.tmp[t, k, observ] = self.r_vec_uncond[t, k, 1-observ]
-				
 		self.s = np.dot(self.tmp[:,:,0].sum(axis=0), obs_weight) / np.dot(self.r_vec_uncond[:,:,1].sum(axis=0), obs_weight) # observe 0 when state is 1
+			
+		
 		self.g = np.dot(self.tmp[:,:,1].sum(axis=0), obs_weight) / np.dot(self.r_vec_uncond[:,:,0].sum(axis=0), obs_weight) # observe 1 when state is 0
 		
 		# update the derivatives
@@ -160,6 +160,9 @@ class BKT_HMM_EM(object):
 		self.s = param['s']  # slippage
 		self.pi = param['pi']  # initial prob of mastery
 		self.l = param['l']  # learn speed
+		
+		if self.pi == 0 or self.l==0:
+			raise ValueException('Invalid Prior.')
 		
 		self._load_observ(data)
 		
