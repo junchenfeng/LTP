@@ -6,21 +6,23 @@ import sys
 sys.path.append(proj_dir)
 
 from BKT.hmm_em import BKT_HMM_EM
-from BKT.hmm_mcmc import BKT_HMM_MCMC
+from BKT.hmm_mcmc_zpd import BKT_HMM_MCMC_ZPD
 
 import numpy as np
 import ipdb
 
-max_obs = 500
-L = 1000
+
+nS = 3
+max_obs = 2000
+L = 1500
 ### (2) Initiate the instance
 em_instance = BKT_HMM_EM()
-mcmc_instance = BKT_HMM_MCMC()
+mcmc_instance = BKT_HMM_MCMC_ZPD()
 
 
 
 # output the true parameter for the simulated data
-file_path = proj_dir+'/data/bkt/test/single_sim_x_1.txt'
+file_path = proj_dir+'/data/bkt/test/single_sim_zpd_x_1.txt'
 
 # check if the data are correctly simulated
 data = []
@@ -33,37 +35,39 @@ with open(file_path) as in_f0:
 N = data[-1][0]
 T = data[-1][1]+1
 # s,g
-xynum = [[0.0, 0.0], [0.0, 0.0]]
-xnum = [0.0, 0.0]
+xynum = [[0,0],[0,0],[0,0]]
+xnum = [0,0,0]
 for log in data:
 	y = log[3]
 	x = log[4]
 	xnum[x] += 1
 	xynum[x][y] += 1
-sHat = xynum[1][0]/xnum[1]
-gHat = xynum[0][1]/xnum[0]
+sHat = xynum[2][0]/xnum[2]
+gHat = xynum[1][1]/xnum[1]
 			
 # learn
 transit = 0.0
 tot = 0
 for log in data:
 	x = log[4]
-	if log[1] > 0 and not prev_x:
-		transit += x
+	if log[1] > 0 and prev_x ==1:
 		tot += 1
+		if x == 2:
+			transit += 1
 	prev_x = x
 lHat = transit/tot
 
 # pi
-x1num = 0.0
+t0x = [0]*nS
 for log in data:
 	if log[1] == 0:
-		x1num += log[4]
-piHat = x1num/N
+		t0x[log[4]] += 1
+pi0Hat = t0x[0]/N
+piHat = t0x[2]/N
 
 # h1 vec
-h_cnt = np.zeros((T,2))
-s_cnt = np.zeros((T,2))
+h_cnt = np.zeros((T,nS))
+s_cnt = np.zeros((T,nS))
 
 for log in data:
 	t = log[1]
@@ -77,6 +81,7 @@ for log in data:
 hrate_mat = h_cnt/(h_cnt+s_cnt)	
 h0Hat = hrate_mat[:,0].tolist()
 h1Hat = hrate_mat[:,1].tolist()
+h2Hat = hrate_mat[:,2].tolist()
 
 #################################################
 ### (1) Single Factor Complete Spell
@@ -102,7 +107,7 @@ with open(file_path) as f:
 		if int(is_a_s):
 			incomplete_data_array.append( (int(i_s), int(t_s), int(j_s), int(y_s), int(is_e_s)) )	
 
-'''		
+		
 # generate initial parameter guess
 y0s = [log[3] for log in full_data_array if log[1]==0]
 y1s = [log[3] for log in full_data_array if log[1]==1]
@@ -115,45 +120,32 @@ init_param = {'s': [1-np.array(yTs).mean()],
 			  'g': [0.3], 
 			  'e0':[0.5],
 			  'e1':[0.5],
+			  'pi0':0.1,			  
 			  'pi': np.array(y0s).mean(),
 			  'l': [np.array(y1s).mean() - np.array(y0s).mean()],
-			  'Lambda': 0.2,
-			  'betas': [-0.1,0.1]}
+			  'Lambda': 0.1,
+			  'betas': [0.1,0.1,-0.1,0.01,0.01]}
 			  
-			  
+'''			  
 em_s, em_g, em_pi, em_l = em_instance.estimate(init_param, full_data_array, max_iter = 10)
-mcmc_pi, mcmc_s, mcmc_g, mcmc_e0,mcmc_e1, mcmc_l, *rest = mcmc_instance.estimate(init_param, full_data_array, method='DG',max_iter = L)
-mcmc_pi_fb, mcmc_s_fb, mcmc_g_fb, mcmc_e0_fb,mcmc_e1_fb, mcmc_l_fb, *rest = mcmc_instance.estimate(init_param, full_data_array, method='FB',max_iter = L)
+mcmc_pi0, mcmc_pi, mcmc_s, mcmc_g, mcmc_e0,mcmc_e1, mcmc_l, *rest = mcmc_instance.estimate(init_param, full_data_array, method='DG',max_iter = L)
+mcmc_pi0_fb, mcmc_pi_fb, mcmc_s_fb, mcmc_g_fb, mcmc_e0_fb,mcmc_e1_fb, mcmc_l_fb, *rest = mcmc_instance.estimate(init_param, full_data_array, method='FB',max_iter = L)
 
 print('Full Data')
 print('point estimation')
-print(sHat, gHat, piHat, lHat)
+print(sHat, gHat, pi0Hat, piHat, lHat)
 print(em_s, em_g, em_pi, em_l)
-print(mcmc_s[0], mcmc_g[0], mcmc_pi, mcmc_l[0])
-print(mcmc_s_fb[0], mcmc_g_fb[0], mcmc_pi_fb, mcmc_l_fb[0])
+print(mcmc_s[0], mcmc_g[0], mcmc_pi0, mcmc_pi ,mcmc_l[0])
+print(mcmc_s_fb[0], mcmc_g_fb[0], mcmc_pi0_fb, mcmc_pi_fb, mcmc_l_fb[0])
+ipdb.set_trace()
 '''
-
 
 #################################################
 ### (2) Single Factor Incomplete Spell
 #################################################
-em_instance = BKT_HMM_EM()
-mcmc_instance = BKT_HMM_MCMC()
-
-y0s = [log[3] for log in full_data_array if log[1]==0]
-y1s = [log[3] for log in full_data_array if log[1]==1]
-yTs = [log[3] for log in full_data_array if log[1]==T-1]
-init_param = {'s': [1-np.array(yTs).mean()],
-			  'g': [0.3], 
-			  'e0':[0.5],
-			  'e1':[0.5],
-			  'pi': np.array(y0s).mean(),
-			  'l': [np.array(y1s).mean() - np.array(y0s).mean()],
-			  'Lambda': 0.2,
-			  'betas': [-0.1,0.1]}
 
 #em_s, em_g, em_pi, em_l = em_instance.estimate(init_param, incomplete_data_array, max_iter = 20)
-mcmc_pi, mcmc_s, mcmc_g, mcmc_e0,mcmc_e1, mcmc_l, mcmc_lambda, mcmc_betas = mcmc_instance.estimate(init_param, incomplete_data_array, method='FB', max_iter = L, is_exit=True)
+mcmc_pi0, mcmc_pi, mcmc_s, mcmc_g, mcmc_e0,mcmc_e1, mcmc_l, mcmc_lambda, mcmc_betas = mcmc_instance.estimate(init_param, incomplete_data_array, method='FB', max_iter = L, is_exit=True)
 print('Incomplete Data')
 
 print('Point estimation')
@@ -161,7 +153,7 @@ print('Main Parameter')
 
 print(sHat, gHat, piHat, lHat)
 #print(em_s, em_g, em_pi, em_l)
-print(mcmc_s[0], mcmc_g[0], mcmc_pi, mcmc_l[0])
+print(mcmc_s[0], mcmc_g[0], mcmc_pi0, mcmc_pi, mcmc_l[0])
 
 print('lambda')
 print(mcmc_lambda)

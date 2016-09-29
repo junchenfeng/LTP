@@ -2,6 +2,14 @@ import numpy as np
 from collections import defaultdict
 from tqdm import tqdm
 import ipdb
+import copy
+
+import os			  
+proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import sys
+sys.path.append(proj_dir)
+
+from BKT.prop_hazard_ars import ars_sampler
 
 def survivial_llk(h,E):
 	# h, T*1 hazard rate
@@ -87,7 +95,7 @@ def logExpSum(llk_vec):
 	llk_sum = llk_max + np.log(np.exp(llk_vec-llk_max).sum())
 	return llk_sum
 	
-class BKT_HMM(object):
+class BKT_HMM_MCMC(object):
 
 	def _load_observ(self, data):
 		# data = [(i,t,j,y,e)]  
@@ -140,6 +148,8 @@ class BKT_HMM(object):
 		self.E_vec = [int(self.E_array[self.T_vec[i]-1, i]) for i in range(self.K)]
 				
 		# initialize
+		self.h0 = [self.Lambda*np.exp(self.betas[1]*t) for t in range(self.T)]
+		self.h1 = [h*np.exp(self.betas[0]) for h in self.h0]		
 		self._update_derivative_parameter()  # learning spead
 		self._collapse_obser_state()
 
@@ -173,13 +183,13 @@ class BKT_HMM(object):
 			
 	def __update_P(self, t, E, item_id_l, V, observ, item_id_O, pi_vec, P_mat):
 		p_raw = np.zeros((2,2))
-		
 		if not E:
 			pa0 = 1-self.hazard_matrix[0, t+1]
 			pa1 = 1-self.hazard_matrix[1, t+1]
 		else:
 			pa0 = self.hazard_matrix[0, t+1]
 			pa1 = self.hazard_matrix[1, t+1]
+
 			
 		po1 = self.observ_prob_matrix[item_id_O, 1*V, observ]
 		po0 = self.observ_prob_matrix[item_id_O, 0  , observ]			
@@ -240,19 +250,38 @@ class BKT_HMM(object):
 					P_mat = self.__update_P(t, Et,  Js[t+1], Vs[t+1], Os[t+1], Js[t+1], pi_vec, P_mat)
 			self.obs_type_info[key]['pi'] = pi_vec
 			self.obs_type_info[key]['P'] = P_mat
-		
-			
+	
+	def __backward_sampling_scheme(self):
+		for obs_key in self.obs_type_info.keys():
+			pi_vec = self.obs_type_info[obs_key]['pi']
+			P_mat = self.obs_type_info[obs_key]['P']
+			T = pi_vec.shape[0]
+			sample_p_vec = np.zeros((T,2))
+			for t in range(T-1,-1,-1):
+				if t == T-1:
+					sample_p_vec[t,1] = min(pi_vec[t,1],1.0)
+				else:
+					for x in range(0,2):
+						sample_p_vec[t,x] = min(P_mat[t,1,x]/P_mat[t,:,x].sum(), 1.0)
+			self.obs_type_info[obs_key]['sample_p'] = sample_p_vec
+				
 	def _MCMC(self, max_iter, method, fixVal, is_exit=True, is_effort=True):
 	
+		
 		if not is_effort and self.valid_prob_matrix[:,:,0].sum() != 0: 
 			raise Exception('Effort rates are not set to 1 while disabled the update in effort parameter.')
 		if not is_exit and self.hazard_matrix.sum() != 0: 
-			raise Exception('Hazard rates are not set to 0 while disabled the update in hazard parameter.')		
-		self.parameter_chain = np.empty((max_iter, 1+self.J*5+self.T*2))
+			raise Exception('Hazard rates are not set to 0 while disabled the update in hazard parameter.')
+		
+		if is_exit:
+			prop_hazard_mdl = ars_sampler(self.Lambda, self.betas)
+			
+		self.parameter_chain = np.empty((max_iter, 1+self.J*5+4))
+		
 		# initialize for iteration
 		for iter in tqdm(range(max_iter)):
 			# Step 1: Data Augmentation
-			
+
 			if method == "DG":
 				# calculate the sample prob
 				for key in self.obs_type_info.keys():
@@ -302,11 +331,9 @@ class BKT_HMM(object):
 			elif method == "FB":
 				# forward recursion
 				self.__forward_recursion()
-				'''
-				diagnosis
-				for obs_key, info in self.obs_type_info.items():
-					print(obs_key, info['pi'][1,0])
-				'''
+				
+				# backward sampling scheme
+				self.__backward_sampling_scheme()
 
 				# backward sampling
 				X = np.empty((self.T, self.K), dtype=np.int)
@@ -314,27 +341,24 @@ class BKT_HMM(object):
 				for k in range(self.K):
 					# check for the observation type
 					obs_key = self.obs_type_ref[k]
-					pi_vec = self.obs_type_info[obs_key]['pi']
-					P_mat = self.obs_type_info[obs_key]['P']
+					sample_p_vec = self.obs_type_info[obs_key]['sample_p']
 					for t in range(self.T_vec[k]-1,-1,-1):
 						if t == self.T_vec[k]-1:
-							p = pi_vec[t,1]
+							p = sample_p_vec[t,1]
 						else:
 							next_state = int(X[t+1,k])
-							p = P_mat[t,1,next_state]/P_mat[t,:,next_state].sum()
-						#if t == 0:
-						#	init_pis[k] = p
-						
-						p = min(max(0,p),1)
-						X[t,k] = np.random.binomial(1,p)
+							p = sample_p_vec[t,next_state]
+						try:
+							X[t,k] = np.random.binomial(1,p)
+						except:
+							ipdb.set_trace()
 				
 				
 			# Step 2: Update Parameter
 			critical_trans = np.zeros((self.J,1),dtype=np.int)
 			tot_trans = np.zeros((self.J,1),dtype=np.int)
 			obs_cnt = np.zeros((self.J,2,2)) # state,observ
-			drop_cnt = np.zeros((2, self.T)) # t,observ
-			survive_cnt = np.zeros((2, self.T))
+
 			
 			valid_cnt = np.zeros((self.J,2),dtype=np.int)
 			valid_state_cnt = np.zeros((self.J,2),dtype=np.int)
@@ -361,13 +385,6 @@ class BKT_HMM(object):
 					# update obs_cnt
 					obs_cnt[o_j, X[t,k]*is_v, self.observ_data[t,k]] += 1 #P(Y=0,V=1,X=1)/P(X=1,V=1) = s; P(Y_t=1,V_t=0)+P(Y_t=1,V_t=1,X_t=0))/(P(V_t=0)+P(X_t=0,V_t=1)) =g
 			
-			for t in range(self.T):
-				# for data survived in last period, check the harzard rate
-				for k in range(self.K):
-					if self.T_vec[k]>=t and  self.E_array[t-1,k] == 0:
-						drop_cnt[X[t,k], t] += self.E_array[t,k]
-						survive_cnt[X[t,k], t] += 1-self.E_array[t,k]
-
 			for j in range(self.J):
 				self.l[j] =  np.random.beta(self.prior_param['l'][0]+critical_trans[j], self.prior_param['l'][1]+tot_trans[j]-critical_trans[j])
 				self.s[j] =  np.random.beta(self.prior_param['s'][0]+obs_cnt[j,1,0], self.prior_param['s'][1]+obs_cnt[j,1,1])
@@ -375,11 +392,54 @@ class BKT_HMM(object):
 			
 			self.pi = np.random.beta(self.prior_param['pi'][0]+sum(X[0,:]), self.prior_param['pi'][1]+self.K-sum(X[0,:]))
 			if is_exit:
-				self.h0 = [ np.random.beta(self.prior_param['h0'][0] + drop_cnt[0, t], self.prior_param['h0'][1] + survive_cnt[0, t]) for t in range(self.T)]
-				self.h1 = [ np.random.beta(self.prior_param['h1'][0] + drop_cnt[1, t], self.prior_param['h1'][1] + survive_cnt[1, t]) for t in range(self.T)]
+				# generate X,D
+				hX = []
+				hD = []
+				for k in range(self.K):
+					for t in range(self.T_vec[k]):
+						hX.append([X[t,k], t, X[t,k]*t])
+						hD.append(self.E_array[t,k])
+						
+				# do a stratified sampling by t
+				M = len(hD)
+				nT = np.zeros((self.T,1),dtype=np.int)
+				idxT = [[] for t in range(self.T)]
+				for hi in range(M):
+					t = hX[hi][1]
+					nT[t] += 1
+					idxT[t].append(hi)
+				select_idx = []
+				for t in range(self.T):
+					idxs = np.random.choice(idxT[t], size = min(round(5000/self.T),nT[t]), replace=False)
+					select_idx += idxs.tolist()
+					
+				
+				'''
+				# do a quick check on the hazard rate
+				h_cnt = np.zeros((self.T,2))
+				s_cnt = np.zeros((self.T,2))
+				for m in range(len(hX)):
+					S,t=hX[m]
+					s_cnt[t,S] += 1
+					h_cnt[t,S] += hD[m]
+				hrates = h_cnt/s_cnt
+				'''
+				
+				# update the proportional hazard model
+				prop_hazard_mdl.load(np.array(hX)[select_idx,:], np.array(hD)[select_idx])
+				prop_hazard_mdl.Lambda = prop_hazard_mdl.sample_lambda()[-1]
+				for k in range(2):
+					prop_hazard_mdl.betas[k] = prop_hazard_mdl.sample_beta(k)[-1]	
+					
+				self.Lambda = prop_hazard_mdl.Lambda
+				self.betas = prop_hazard_mdl.betas
+				self.h0 = [self.Lambda*np.exp(self.betas[1]*t) for t in range(self.T)]
+				self.h1 = [h*np.exp(self.betas[0]) for h in self.h0]
 			else:
-				self.h0 = [ 0.0 for t in range(self.T)]
-				self.h1 = [ 0.0 for t in range(self.T)]
+				self.h0 = [0.0 for t in range(self.T)]
+				self.h1 = [0.0 for t in range(self.T)]
+			
+			
 			if is_effort:
 				for j in range(self.J):
 					self.e0[j] = np.random.beta(self.prior_param['e0'][0]+valid_cnt[j,0], self.prior_param['e0'][1]+valid_state_cnt[j,0]-valid_cnt[j,0])
@@ -392,59 +452,19 @@ class BKT_HMM(object):
 			if 'g' in fixVal:
 				for j in range(self.J):
 					self.g[j] = fixVal['g']			
-			
-			self.parameter_chain[iter, :] = [self.pi] + self.s + self.g + self.e0 + self.e1 + self.l + self.h0 + self.h1
+			self.parameter_chain[iter, :] = [self.pi] + self.s + self.g + self.e0 + self.e1 + self.l + [self.Lambda] + self.betas
 			self._update_derivative_parameter()
-	'''			
-	def __get_llk(self, s, g, pi, l, h0, h1):
-		# can only calculat the insample fit
-		state_init_dist = np.array([1-pi, pi])
-		state_transit_matrix = np.array([[1-l, l], [0, 1]])
-		observ_prob_matrix = np.array([[1-g, g], [s, 1-s]])  # index by state, observ
-		hazard_matrix = np.array([h0, h1])		
-		
-		type_llk_ref = {}
-		
-		for key in self.obs_type_info.keys():
-			# get the obseration state
-			O = self.obs_type_info[key]['O']
-			E = self.obs_type_info[key]['E']
-			
-			#calculate the exhaustive state probablity
-			Ti = len(O)					
-			X_mat = generate_possible_states(Ti)
-			X_llk_vec = get_llk_all_states(X_mat, O, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix)
-			type_llk_ref[key] = np.log(X_llk_vec.sum())
-		
-		llk = 0
-		for k in range(self.K):
-			obs_key = self.obs_type_ref[k]
-			llk += type_llk_ref[obs_key]
-		
-		return llk
-	'''
+
 	
 	def _get_point_estimation(self, start, end):
 		# calcualte the llk for the parameters
 		gap = max(int((end-start)/100), 10)
 		parameter_candidates = self.parameter_chain[range(start, end, gap), :]
-		
-		'''
-		N = parameter_candidates.shape[0]
-		llk_vec = np.zeros((N,))
-		
-		for i in range(N):
-			llk_vec[i] = self.__get_llk(parameter_candidates[i,0], parameter_candidates[i,1], parameter_candidates[i,2], parameter_candidates[i,3], parameter_candidates[i,4], parameter_candidates[i,5])
-		
-		llk_sum = logExpSum(llk_vec)
-		parameter_weight = np.exp(llk_vec - llk_sum)
-		
-		avg_parameter = np.dot(parameter_candidates.transpose(), parameter_weight).tolist()
-		'''
 		avg_parameter = parameter_candidates.mean(axis=0).tolist()
 		return avg_parameter
 				
-	def estimate(self, param, data_array, method='FB', max_iter=1000, is_exit=True, fixVal={}):
+	def estimate(self, init_param, data_array, method='FB', max_iter=1000, is_exit=True, fixVal={}):
+		param = copy.copy(init_param)
 		# ALL items share the same prior for now
 		self.g = param['g']  # guess
 		self.s = param['s']  # slippage
@@ -452,10 +472,16 @@ class BKT_HMM(object):
 		self.e0 = param['e0']
 		self.pi = param['pi']  # initial prob of mastery
 		self.l = param['l']  # learn speed
-		self.h0 = param['h0']  # harzard rate with response 0
-		self.h1 = param['h1']  # harzard rate with response 1
-		if not is_exit and (sum(self.h0)>0 or sum(self.h1)>0):
-			raise Exception('Under no exit regime, no hazard rate allowed.')
+		self.Lambda = param['Lambda']  # harzard rate with response 0
+		self.betas = param['betas']  # proportional hazard parametes, hard code to [X,t]
+		
+		# generate derivative stats
+		
+		
+		if len(self.betas)!=3:
+			raise Exception('Wrong specification for proportional hazard model.')
+		if not is_exit and self.Lambda !=0:
+			raise Exception('Under no exit regime, baseline hazard rate should be zero.')
 		
 		if self.pi == 0:
 			raise Exception('Invalid Prior')
@@ -466,9 +492,7 @@ class BKT_HMM(object):
 							'e0': [2, 2],
 							'e1':[2, 2],
 							'g': [1, 2],
-							'pi':[2, 2],
-							'h0':[2, 2],
-							'h1':[2, 2]}
+							'pi':[2, 2]}
 		
 		self._load_observ(data_array)
 		self._MCMC(max_iter, method, fixVal, is_exit)
@@ -480,65 +504,10 @@ class BKT_HMM(object):
 		self.e0 = res[1+self.J*2:1+self.J*3]
 		self.e1 = res[1+self.J*3:1+self.J*4]
 		self.l = res[1+self.J*4:1+self.J*5]
-		self.h0 = res[1+self.J*5:1+self.J*5+self.T]
-		self.h1 = res[1+self.J*5+self.T:]	
+		self.Lambda = res[1+self.J*5:1+self.J*5+1]
+		self.betas = res[1+self.J*5+1:]	
 		
-		return self.pi, self.s, self.g, self.e0, self.e1, self.l, self.h0, self.h1
-	
-	def predict(self, param, data_array):
-		raise Exception('Deprecated!')
-		# currently only implement for FB algorithm
-		self.g = param['g']  # guess
-		self.s = param['s']  # slippage
-		self.pi = param['pi']  # initial prob of mastery
-		self.l = param['l']  # learn speed
-		self.h0 = param['h0']  # harzard rate with response 0
-		self.h1 = param['h1']  # harzard rate with response 1
-
-		self._load_observ(data_array)
-		# the state collapse is different. E is always 0
-		self._collapse_obser_state()
-		# run forward algorithm
-		self.__forward_recursion()
-		# predict
-		output = []
-		for k in range(self.K):
-			obs_key = self.obs_type_ref[k]
-			pi_vec = self.obs_type_info[obs_key]['pi']
-			for t in range(self.T_vec[k]-1):
-				x_t_posterior = pi_vec[t,1]
-				pyHat = ((1-x_t_posterior)*self.l + x_t_posterior)*(1-self.s) + (1-x_t_posterior)*(1-self.l)*self.g
-				y_true = self.observ_data[t+1,k]
-				output.append((pyHat, y_true))
-		return output	
-
-	def predict_exit(self, param, data_array):
-		raise Exception('Deprecated!')
-		# currently only implement for FB algorithm
-		self.g = param['g']  # guess
-		self.s = param['s']  # slippage
-		self.pi = param['pi']  # initial prob of mastery
-		self.l = param['l']  # learn speed
-		self.h0 = param['h0']  # harzard rate with response 0
-		self.h1 = param['h1']  # harzard rate with response 1
-
-		self._load_observ(data_array)
-		# the state collapse is different. E is always 0
-		self._collapse_obser_state()
-		# run forward algorithm
-		self.__forward_recursion()
-		# predict
-		output = []
-		for k in range(self.K):
-			obs_key = self.obs_type_ref[k]
-			pi_vec = self.obs_type_info[obs_key]['pi']
-			for t in range(self.T_vec[k]-1):
-				x_t_posterior = pi_vec[t,1]
-				pyHat = ((1-x_t_posterior)*self.l + x_t_posterior)*(1-self.s) + (1-x_t_posterior)*(1-self.l)*self.g
-				hHat = pyHat*self.hazard_matrix[1,t+1] + (1-pyHat)*self.hazard_matrix[0,t+1]
-				y_true = self.E_array[t+1,k]
-				output.append((hHat, y_true))
-		return output
+		return self.pi, self.s, self.g, self.e0, self.e1, self.l, self.Lambda, self.betas
 		
 if __name__=='__main__':
 	# UNIT TEST

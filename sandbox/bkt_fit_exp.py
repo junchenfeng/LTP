@@ -2,7 +2,7 @@ import os
 proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import sys
 sys.path.append(proj_dir)
-from BKT.hmm_mcmc import BKT_HMM
+from BKT.hmm_mcmc_zpd import BKT_HMM_MCMC_ZPD
 import numpy as np
 
 file_path = proj_dir+'/data/bkt/exp_output_effort_auto.csv'
@@ -44,19 +44,21 @@ with open(file_path) as f:
 		
 nJ = 5
 nT = 3
-mcmc_instance = BKT_HMM()
+mcmc_instance = BKT_HMM_MCMC_ZPD()
 init_param = {'s': [0.1]*nJ,
 			  'g': [0.3]*nJ, 
-			  'e0':[0.5]*nJ,
 			  'e1':[0.5]*nJ,
+			  'e2':[0.5]*nJ,
 			  'pi': 0.4,
+			  'pi0':0.1,
 			  'l': [0.2]*nJ,
-			  'h0': [0]*nT,
-			  'h1': [0]*nT
+			  'gamma': 0.0,
+			  'betas': [0.00]*5
 			  }
 
-L = 1000			  
-pi, s, g, e0,e1, l, h0, h1 = mcmc_instance.estimate(init_param, sim_data_array, max_iter = L, is_exit=False)
+L = 100	
+'''		  
+pi0, pi, s, g, e0, e1, l, *rest = mcmc_instance.estimate(init_param, sim_data_array, max_iter = L, is_exit=False)
 
 print('No effort')
 print('point estimation')
@@ -65,64 +67,41 @@ print(s)
 print(g)
 print(l)
 print(pi)
+print(pi0)
 
 np.savetxt(proj_dir+'/data/bkt/chp3_parameter_chain_no_effort.txt', mcmc_instance.parameter_chain, delimiter=',')
 
 
-nJ = 5
-nT = 3
-mcmc_instance = BKT_HMM()
-init_param = {'s': [0.1]*nJ,
-			  'g': [0.3]*nJ, 
-			  'e0':[0.5]*nJ,
-			  'e1':[0.5]*nJ,
-			  'pi': 0.4,
-			  'l': [0.2]*nJ,
-			  'h0': [0]*nT,
-			  'h1': [0]*nT
-			  }
-
-L = 1000			  
-pi, s, g, e0,e1, l, h0, h1 = mcmc_instance.estimate(init_param, auto_data_array, max_iter = L, is_exit=False)
+pi0, pi, s, g, e1, e2, l, *rest = mcmc_instance.estimate(init_param, auto_data_array, max_iter = L, is_effort=True, is_exit=False)
 
 print('automatic slack')
 print('point estimation')
 #print(sHat, gHat, piHat, lHat)
 print(s)
 print(g)
-print(e0)
-print(e1)
 print(l)
 print(pi)
+print(pi0)
+print(e1)
+print(e2)
 
 np.savetxt(proj_dir+'/data/bkt/chp3_parameter_chain_with_effort_auto.txt', mcmc_instance.parameter_chain, delimiter=',')
+'''
 
-
-nJ = 5
-nT = 3
-mcmc_instance = BKT_HMM()
-init_param = {'s': [0.1]*nJ,
-			  'g': [0.3]*nJ, 
-			  'e0':[0.5]*nJ,
-			  'e1':[0.5]*nJ,
-			  'pi': 0.4,
-			  'l': [0.2]*nJ,
-			  'h0': [0]*nT,
-			  'h1': [0]*nT
-			  }
-
-L = 1000			  
-pi, s, g, e0,e1, l, h0, h1 = mcmc_instance.estimate(init_param, manual_data_array, max_iter = L, is_exit=False)
+	  
+pi0, pi, s, g, e1, e2, l, *rest = mcmc_instance.estimate(init_param, manual_data_array, max_iter = L, is_effort=True, is_exit=False)
 
 print('manual slack')
 print('point estimation')
 #print(sHat, gHat, piHat, lHat)
 print(s)
 print(g)
-print(e0)
-print(e1)
 print(l)
 print(pi)
+print(pi0)
+print(e1)
+print(e2)
+
 
 np.savetxt(proj_dir+'/data/bkt/chp3_parameter_chain_with_effort_manual.txt', mcmc_instance.parameter_chain, delimiter=',')
 

@@ -16,18 +16,19 @@ T = 5
 # model parameters
 s = 0.05
 g = 0.2
-pi = 0.4
+pi0=0.1
+pi = 0.5
 l = 0.3
 Lambda = 0.3
-betas = [np.log(1.2), np.log(0.6), np.log(1.05)]
-h0_vec = [Lambda*np.exp(betas[0]*t) for t in range(T)]
-h1_vec = [h0_vec[t]*np.exp(betas[1]+betas[2]*t) for t in range(T)]
+betas = [np.log(1.2), 0, np.log(0.7), 0, -.04] # 
+h1_vec = [Lambda*np.exp(betas[0]*t) for t in range(T)]
+h0_vec = [h1_vec[t]*np.exp(betas[1]+betas[3]*t) for t in range(T)]
+h2_vec = [h1_vec[t]*np.exp(betas[2]+betas[4]*t) for t in range(T)]
 
-
-hazard_matrix = np.array([h0_vec, h1_vec])
-state_init_dist = np.array([1-pi, pi])
-state_transit_matrix = np.array([[1-l, l],[0, 1]])
-observ_matrix = np.array([[1-g,g],[s,1-s]])
+hazard_matrix = np.array([h0_vec, h1_vec, h2_vec])
+state_init_dist = np.array([pi0, 1-pi-pi0, pi])
+state_transit_matrix = np.array([[1,0,0],[0, 1-l, l],[0, 0, 1]])
+observ_matrix = np.array([[1,0],[1-g,g],[s,1-s]])
 
 # The data format is
 # id, t, y, is_observed, x
@@ -39,9 +40,9 @@ for i in range(N):
 	
 	for t in range(T):
 		if t ==0:
-			S = int( np.random.binomial(1, state_init_dist[1]) )
+			S = int( np.random.choice(3, 1, p=state_init_dist) )
 		else:
-			S = int( np.random.binomial(1, state_transit_matrix[S, 1]) )
+			S = int( np.random.choice(3, 1, p=state_transit_matrix[S, :]) )
 		y = int( np.random.binomial(1, observ_matrix[S, 1]) )
 					
 		# update if observed
@@ -61,14 +62,15 @@ tot_trans = 0
 crit_trans = 0
 for m in range(len(data)):
 	i,t,j,y,S,ex,a = data[m]
-	if  t<T-1 and S==0:
+	if  t<T-1 and S==1:
 		S = data[m+1][4]
 		tot_trans += 1
-		crit_trans += S
+		if S == 2:
+			crit_trans += 1
 print(crit_trans/tot_trans)
 
-h_cnt = np.zeros((T,2))
-s_cnt = np.zeros((T,2))
+h_cnt = np.zeros((T,3))
+s_cnt = np.zeros((T,3))
 for m in range(len(data)):
 	i,t,j,y,S,ex,a = data[m]
 	if a:
@@ -76,7 +78,8 @@ for m in range(len(data)):
 		h_cnt[t,S] += ex
 hrates = h_cnt/s_cnt
 print(hrates)
-with open(proj_dir + '/data/bkt/test/single_sim_x_1.txt','w') as f:
+
+with open(proj_dir + '/data/bkt/test/single_sim_zpd_x_1.txt','w') as f:
 	for log in data:
 		f.write('%d,%d,%d,%d,%d,%d,%d\n' % log)
 

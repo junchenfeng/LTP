@@ -3,7 +3,7 @@ import ipdb
 from tqdm import tqdm
 
 from collections import defaultdict
-
+import copy
 
 # use EM to compute the bayes net
 class BKT_HMM_EM(object):		
@@ -79,8 +79,8 @@ class BKT_HMM_EM(object):
 		return gamma, gamma_raw
 	
 		
-	def estimate(self, param, data, max_iter=10, print_on=False):
-	
+	def estimate(self, init_param, data, max_iter=10, print_on=False):
+		param = copy.deepcopy(init_param)
 		self.g = param['g'][0]  # guess
 		self.s = param['s'][0]  # slippage
 		self.pi = param['pi']  # initial prob of mastery
