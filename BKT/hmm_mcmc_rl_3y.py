@@ -11,12 +11,7 @@ sys.path.append(proj_dir)
 
 from BKT.prop_hazard_ars import ars_sampler
 
-# There are three states, uninitiated, initiated, learned.
-# uninitiated and learned are both absorbing state
-# initiated can move to learned
-# This corresponds to the zone of proximal development
-
-# the learning rate depends on the response from time t-1
+# Reinforcement learning. Allow zpd to transit. Learning does not depends on Y
 
 def survivial_llk(h,E):
 	# h, T*1 hazard rate
@@ -32,64 +27,106 @@ def survivial_llk(h,E):
 	prob = base_prob*(E*h[-1]+(1-E)*(1-h[-1]))
 	return prob
 
-def state_llk(X, J, V, O, init_dist, transit_matrix):
+def state_llk(X, J, V, init_dist, transit_matrix):
 	# X: vector of latent state, list
 	# transit matrix is np array [t-1,t]
 	#if X[0] == 1:
 	#	ipdb.set_trace()
-	prob = init_dist[X[0]]*np.product([transit_matrix[J[t], V[t], O[t-1], X[t-1], X[t]] for t in range(1,len(X))])
+	prob = init_dist[X[0]]*np.product([transit_matrix[J[t], V[t], X[t-1], X[t]] for t in range(1,len(X))])
 	return prob
 	
-def likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort = False):
+def likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort = False, is_exit=False):
 	# X:  Latent state
 	# O: observation
 	# E: binary indicate whether the spell is ended
 	T = len(X)
 	# P(E|X)
 	h = np.array([hazard_matrix[X[t],t] for t in range(T)])
-	pa = survivial_llk(h,E)
+	if is_exit: 
+		pa = survivial_llk(h,E)
+	else:
+		pa = 1
 	
 	# P(O|X)
 	po = 1
+	pv = 1
 	# P(V|X)
 	if is_effort:
-		pv = np.product([valid_prob_matrix[J[t],X[t],V[t]] for t in range(T)])
+		# The effort is generated base on the last X. The first effort choice is not modeled.
+		for t in range(1,T):
+			pv *= valid_prob_matrix[J[t],X[t-1],V[t]]
+	
 		for t in range(T):
-			if X[t]!=0:
-				po *= observ_prob_matrix[J[t],(X[t]-1)*V[t]+1,O[t]]
+			if V[t]!=0:
+				po *= observ_prob_matrix[J[t], X[t], O[t]]
 			else:
-				po *= observ_prob_matrix[J[t],0,O[t]]		
+				po *= 1.0 if O[t] == 0 else 0.0 	
 		# P(X)
-		px = state_llk(X, J, V, O, state_init_dist, state_transit_matrix)				
+		px = state_llk(X, J, V, state_init_dist, state_transit_matrix)				
 	else:
 		pv = 1
 		for t in range(T):
 			po *= observ_prob_matrix[J[t],X[t],O[t]]
-		px = state_llk(X, J, [1 for x in X], O, state_init_dist, state_transit_matrix)
-
-	return pa*po*px*pv
+		px = state_llk(X, J, [1 for x in X], state_init_dist, state_transit_matrix)
+	lk = pa*po*px*pv
+	if lk<0:
+		raise ValueError('Negative likelihood.')
+	return lk
 	
-def generate_possible_states(T, is_uninit):
-	# because of the left-right constraints, the possible state is T+2
-	if is_uninit:
-		X_mat = np.ones([T+2,T], dtype=np.int)*2
-	else:
-		X_mat = np.ones([T+1,T], dtype=np.int)*2
-	
+def generate_possible_states(T):
+	# because of the left-right constraints, the number of states is not 3^T
+	# generate the baseline
+	X_mat = np.ones([T+1,T], dtype=np.int)
 	for t in range(1,T+1):
-		X_mat[t,:t]=1
-	
-	if is_uninit:
-		X_mat[T+1,:] = 0 # the uninitiated
-	
+		X_mat[t,:t]=0
 	return X_mat
 
-def get_llk_all_states(X_mat, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort=False):
+def generate_incremental_states(state_basis, start_lv):
+	# assume input is 1*T np array
+	# only allow to go one up
+	# no jumping between non-consecutive states
+	T = state_basis.shape[1]
+	if state_basis.sum() == start_lv*T:
+		new_states = generate_possible_states(T)[:-1,]+start_lv
+	else:
+		# because of the now jummping requirement, count at least two initial level 
+		# find the first location of the 2nd start level, and do a incremental states
+		cnt = 0
+		for t in range(T):
+			if state_basis[0,t]==start_lv:
+				cnt+=1
+				if cnt==2:
+					break
+		if cnt<2:
+			new_states = None
+		else:
+			# because of the constrains before, it is guaranteed that t<T
+			new_states = np.zeros([T-t,T], dtype=np.int)
+			new_states[:,0:t] = np.vstack(np.tile(state_basis[0,0:t], (T-t, 1)))
+			new_states[:,t:] = generate_possible_states(T-t)[:-1,]+start_lv
+	return new_states
+			
+			
+def generate_states(T, max_level=1):
+	# generate the basis
+	states = generate_possible_states(T)
+	if max_level >1:
+		for lv in range(1,max_level):
+			all_states = copy.deepcopy(states)
+			for i in range(states.shape[0]):
+				incre_states = generate_incremental_states(states[i,:].reshape(1,T), lv)
+				if incre_states is not None:
+					all_states = np.vstack((all_states, incre_states))
+			states = all_states
+	return states
+	
+
+def get_llk_all_states(X_mat, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort=False, is_exit=False):
 	N_X = X_mat.shape[0]
 	llk_vec = []
 	for i in range(N_X):
 		X = [int(x) for x in X_mat[i,:].tolist()]
-		llk_vec.append( likelihood(X, O, J,V, E, hazard_matrix, observ_prob_matrix, state_init_dist,state_transit_matrix, valid_prob_matrix, is_effort) )
+		llk_vec.append( likelihood(X, O, J,V, E, hazard_matrix, observ_prob_matrix, state_init_dist,state_transit_matrix, valid_prob_matrix, is_effort, is_exit) )
 		
 	return np.array(llk_vec)
 
@@ -99,7 +136,7 @@ def get_single_state_llk(X_mat, llk_vec, t, x):
 
 def get_joint_state_llk(X_mat, llk_vec, t, x1, x2):
 	if t==0:
-		raise ValueException('t must > 0.')
+		raise ValueError('t must > 0.')
 	res = llk_vec[ (X_mat[:, t-1]==x1) & (X_mat[:, t]==x2) ].sum() 
 	return res
 
@@ -191,11 +228,20 @@ class BKT_HMM_MCMC(object):
 				pa2 = self.hazard_matrix[2, t]
 			
 			if not is_effort:
-				V = 1
-			po0 = self.observ_prob_matrix[item_id, 0, observ]
-			po1 = self.observ_prob_matrix[item_id, 1, observ] # always guess
-			po2 = self.observ_prob_matrix[item_id, 1+V, observ] # if no effort, allow for guess
-			
+				po0 = self.observ_prob_matrix[item_id, 0, observ]
+				po1 = self.observ_prob_matrix[item_id, 1, observ] # always guess
+				po2 = self.observ_prob_matrix[item_id, 2, observ] # if no effort, allow for guess
+			else:
+				if V == 1:
+					po0 = self.observ_prob_matrix[item_id, 0, observ]
+					po1 = self.observ_prob_matrix[item_id, 1, observ] # always guess
+					po2 = self.observ_prob_matrix[item_id, 2, observ] # if no effort, allow for guess
+				else:
+					if observ ==0:
+						po0 = 1; po1 = 1; po2 = 1;
+					else:
+						po0 = 0; po1 = 0; po2 = 0;
+			'''
 			if is_effort:
 				pv0 = self.valid_prob_matrix[item_id, 0, V]
 				pv1 = self.valid_prob_matrix[item_id, 1, V]
@@ -204,11 +250,11 @@ class BKT_HMM_MCMC(object):
 				pv0 = 1
 				pv1 = 1
 				pv2 = 1
-			
+			'''
 			# pi(i,0) = P(X_0=i|O0,\theta)
-			p0y = self.pi0 * po0  * pa0 * pv0
-			p1y = (1-self.pi-self.pi0) * po1 * pa1 * pv1 
-			p2y = self.pi * po2  * pa2 * pv2
+			p0y = self.pi0 * po0  * pa0 #* pv0
+			p1y = (1-self.pi-self.pi0) * po1 * pa1 #* pv1 
+			p2y = self.pi * po2  * pa2 #* pv2
 			py = p0y+p1y+p2y
 					
 			pi_vec[t,:] = [p0y/py, p1y/py, p2y/py]
@@ -220,12 +266,10 @@ class BKT_HMM_MCMC(object):
 		
 		return pi_vec
 			
-	def __update_P(self, t, E, item_id_l, V, observ, observ0, item_id_O, pi_vec, P_mat, is_effort=False):	
+	def __update_P(self, t, E, item_id_l, V, observ, item_id_O, pi_vec, P_mat, is_effort=False):	
 	
 		#ipdb.set_trace()
 		p_raw = np.zeros((3,3))
-		if not is_effort:
-			V = 1
 		
 		if not E:
 			pa0 = 1-self.hazard_matrix[0, t+1]
@@ -236,26 +280,37 @@ class BKT_HMM_MCMC(object):
 			pa1 = self.hazard_matrix[1, t+1]
 			pa2 = self.hazard_matrix[2, t+1]
 			
-		po0 = self.observ_prob_matrix[item_id_O, 0, observ]
-		po1 = self.observ_prob_matrix[item_id_O, 1, observ] # always guess
-		po2 = self.observ_prob_matrix[item_id_O, 1+V, observ] # if no effort, allow for guess
+		if not is_effort:
+			po0 = self.observ_prob_matrix[item_id, 0, observ]
+			po1 = self.observ_prob_matrix[item_id, 1, observ] # always guess
+			po2 = self.observ_prob_matrix[item_id, 2, observ] # if no effort, allow for guess
+		else:
+			if V == 1:
+				po0 = self.observ_prob_matrix[item_id, 0, observ]
+				po1 = self.observ_prob_matrix[item_id, 1, observ] # always guess
+				po2 = self.observ_prob_matrix[item_id, 2, observ] # if no effort, allow for guess
+			else:
+				if observ ==0:
+					po0 = 1; po1 = 1; po2 = 1;
+				else:
+					po0 = 0; po1 = 0; po2 = 0;
 		
-		# TODO: change the item_id_O to l
 		if is_effort:
-			pv0 = self.valid_prob_matrix[item_id_O, 0, V]
-			pv1 = self.valid_prob_matrix[item_id_O, 1, V]
-			pv2 = self.valid_prob_matrix[item_id_O, 2, V]
+			pv0 = self.valid_prob_matrix[item_id_l, 0, V]
+			pv1 = self.valid_prob_matrix[item_id_l, 1, V]
+			pv2 = self.valid_prob_matrix[item_id_l, 2, V]
 		else:
 			pv0 = 1
 			pv1 = 1
 			pv2 = 1
 		
-		p_raw[0,0] = max(pi_vec[t,0] * self.state_transit_matrix[item_id_l,V,observ0,0,0] * po0 * pa0 * pv0, 0.0)
-		p_raw[1,1] = max(pi_vec[t,1] * self.state_transit_matrix[item_id_l,V,observ0,1,1] * po1 * pa1 * pv1, 0.0)
-		p_raw[1,2] = max(pi_vec[t,1] * self.state_transit_matrix[item_id_l,V,observ0,1,2] * po2 * pa2 * pv2, 0.0)
-		p_raw[2,2] = max(pi_vec[t,2] * self.state_transit_matrix[item_id_l,V,observ0,2,2] * po2 * pa2 * pv2, 0.0)
+		p_raw[0,0] = max(pi_vec[t,0] * self.state_transit_matrix[item_id_l,V,0,0] * po0 * pa0 * pv0, 0.0)
+		p_raw[1,1] = max(pi_vec[t,1] * self.state_transit_matrix[item_id_l,V,1,1] * po1 * pa1 * pv1, 0.0)
+		p_raw[2,2] = max(pi_vec[t,2] * self.state_transit_matrix[item_id_l,V,2,2] * po2 * pa2 * pv2, 0.0)
 		
-		
+		p_raw[0,1] = max(pi_vec[t,0] * self.state_transit_matrix[item_id_l,V,0,1] * po1 * pa1 * pv1, 0.0)
+		p_raw[1,2] = max(pi_vec[t,1] * self.state_transit_matrix[item_id_l,V,1,2] * po2 * pa2 * pv2, 0.0)
+	
 		P_mat[t,:,:] = p_raw/p_raw.sum()
 
 		
@@ -263,10 +318,11 @@ class BKT_HMM_MCMC(object):
 		
 	def _update_derivative_parameter(self):
 		self.state_init_dist = 		np.array([self.pi0, 1-self.pi-self.pi0, self.pi]) # initial distribution is invariant to item	
-		self.state_transit_matrix = np.stack([np.array([[[[1,0,0],[0,1,0],[0,0,1]],[[1,0,0],[0,1,0],[0,0,1]]], [[[1,0,0],[0,1-self.l0[j], self.l0[j]], [0, 0, 1]],[[1,0,0],[0,1-self.l1[j], self.l1[j]], [0, 0, 1]]]]) for j in range(self.J)]) # if V=0 P(X_t=X_{t-1}) = 1
-		self.observ_prob_matrix = 	np.stack([np.array([[1,0], [1-self.g[j], self.g[j]], [self.s[j], 1-self.s[j]]])  for j in range(self.J)]) # index by state, observ
+		self.state_transit_matrix = np.stack([np.array([[[1,0,0],[0,1,0], [0, 0, 1]],[[1-self.l0[j], self.l0[j], 0],[0,1-self.l1[j], self.l1[j]], [0, 0, 1]]]) for j in range(self.J)]) # if V=0 P(X_t=X_{t-1}) = 1
+		self.observ_prob_matrix = 	self.c # index by state, observ
 		self.hazard_matrix = 		np.array([self.h0, self.h1, self.h2]) # hazard rate is invariant to item
-		self.valid_prob_matrix = 	np.stack([np.array([[1,0],[1-self.e1[j], self.e1[j]],[1-self.e2[j], self.e2[j]]]) for j in range(self.J)]) # index by state, V
+		#TODO: valid_prob_matrix is wrong
+		self.valid_prob_matrix = 	np.stack([np.array([[1-self.e[i][j], self.e[i][j]] for i in range(3)]) for j in range(self.J)]) # index by state, V
 		#TODO: add robust check
 	
 	def _collapse_obser_state(self):
@@ -301,7 +357,7 @@ class BKT_HMM_MCMC(object):
 				pi_vec = self.__update_pi(t, Et, Vs[t], Os[t], Js[t], pi_vec, P_mat, is_effort)
 				if t !=T-1 and T!=1:
 					Et = get_E(E,t+1,T-1)
-					P_mat = self.__update_P(t, Et,  Js[t+1], Vs[t+1], Os[t+1], Os[t], Js[t+1], pi_vec, P_mat, is_effort)
+					P_mat = self.__update_P(t, Et,  Js[t+1], Vs[t+1], Os[t+1], Js[t+1], pi_vec, P_mat, is_effort)
 			self.obs_type_info[key]['pi'] = pi_vec
 			self.obs_type_info[key]['P'] = P_mat
 	
@@ -311,17 +367,20 @@ class BKT_HMM_MCMC(object):
 			P_mat = self.obs_type_info[obs_key]['P']
 			T = pi_vec.shape[0]
 			# This hard codes the fact that uninitiated is an obserbing state
-			sample_p_vec = np.zeros((T,3))
+			sample_p_vec = np.zeros((T,3,3))
+			init_p_vec = np.zeros((3,)) 
 			for t in range(T-1,-1,-1):
 				if t == T-1:
-					sample_p_vec[t,:] = [min(pi,1.0) for pi in pi_vec[t,:]] # the initial state needs full specification
+					init_p_vec = [min(pi,1.0) for pi in pi_vec[t,:]]
 				else:
 					for x in range(1,3):
 						# th problem is really to sample state 1 and 2 if the previous state is not 0
-						sample_p_vec[t,x] = min(P_mat[t,2,x]/P_mat[t,:,x].sum(), 1.0)
+						sample_p_vec[t,x,:] = P_mat[t,:,x]/P_mat[t,:,x].sum()
+
 			self.obs_type_info[obs_key]['sample_p'] = sample_p_vec
-				
-	def _MCMC(self, max_iter, method, fixVal, is_exit=False, is_effort=False, is_uninit=False):
+			self.obs_type_info[obs_key]['init_p'] = init_p_vec
+			
+	def _MCMC(self, max_iter, method, fixVal, is_exit=False, is_effort=False):
 		if not is_exit and self.hazard_matrix.sum() != 0: 
 			raise Exception('Hazard rates are not set to 0 while disabled the update in hazard parameter.')
 		
@@ -330,7 +389,7 @@ class BKT_HMM_MCMC(object):
 			prop_hazard_mdls[0] = ars_sampler(self.Lambda*math.exp(self.betas[1]), [0])
 			prop_hazard_mdls[1] = ars_sampler(self.Lambda, [self.betas[x] for x in [0,2,4]])
 			
-		self.parameter_chain = np.empty((max_iter, 2+self.J*6+6))
+		self.parameter_chain = np.empty((max_iter, 2+self.J*9+6))
 		
 		# initialize for iteration
 		for iter in tqdm(range(max_iter)):
@@ -347,33 +406,62 @@ class BKT_HMM_MCMC(object):
 					
 					#calculate the exhaustive state probablity
 					Ti = len(O)					
-					X_mat = generate_possible_states(Ti, is_uninit)
-					llk_vec = get_llk_all_states(X_mat, O, J, V, E, self.hazard_matrix, self.observ_prob_matrix, self.state_init_dist, self.state_transit_matrix, self.valid_prob_matrix, is_effort)
-					self.obs_type_info[key]['pi'] = [get_single_state_llk(X_mat, llk_vec, 0, x)/llk_vec.sum() for x in range(3)]
+					X_mat = generate_states(Ti, 2)
+					llk_vec = get_llk_all_states(X_mat, O, J, V, E, self.hazard_matrix, self.observ_prob_matrix, self.state_init_dist, self.state_transit_matrix, self.valid_prob_matrix, is_effort, is_exit)
+					
 					self.obs_type_info[key]['llk_vec'] = llk_vec
-					self.obs_type_info[key]['l_vec'] = [ get_joint_state_llk(X_mat, llk_vec, t, 1, 2) / get_single_state_llk(X_mat, llk_vec, t-1, 1) for t in range(1,Ti)]
-				
+					if abs(llk_vec.sum())<0.0000001:
+						ipdb.set_trace()
+						raise ValueError('All likelihood are 0.')
+					
+					
+					self.obs_type_info[key]['pi'] = [get_single_state_llk(X_mat, llk_vec, 0, x)/llk_vec.sum() for x in range(3)]
+					
+					l0_vec = [];l1_vec = [];				
+					for t in range(1,Ti):
+						if get_single_state_llk(X_mat, llk_vec, t-1, 0) != 0:
+							l0 = get_joint_state_llk(X_mat, llk_vec, t, 0, 1) / get_single_state_llk(X_mat, llk_vec, t-1, 0)
+							if not(l0>=0 and l0<=1):
+								if l0>1 and l0-1<0.00001:
+									l0 = 1.0
+								else:
+									raise ValueError('Learning rate is wrong for X=0.')
+						else:
+							l0 = 0
+							
+						if get_single_state_llk(X_mat, llk_vec, t-1, 1) != 0:
+							l1 = get_joint_state_llk(X_mat, llk_vec, t, 1, 2) / get_single_state_llk(X_mat, llk_vec, t-1, 1)
+							if not(l1>=0 and l1<=1):
+								if l1>1 and l1-1<0.00001:
+									l1 = 1.0
+								else:
+									raise ValueError('Learning rate is wrong for X=1.')	
+						else:
+							l1 = 0									
+						l0_vec.append(l0)
+						l1_vec.append(l1)				
+					self.obs_type_info[key]['l0_vec'] = l0_vec
+					self.obs_type_info[key]['l1_vec'] = l1_vec
 				# sample states
 				X = np.empty((self.T, self.K),dtype=np.int)
-				
 				for i in range(self.K):
 					# check the key
 					obs_key = self.obs_type_ref[i]
 					pi = self.obs_type_info[obs_key]['pi']
-					l_vec = self.obs_type_info[obs_key]['l_vec']
+					#ipdb.set_trace()
+					l0_vec = self.obs_type_info[obs_key]['l0_vec']
+					l1_vec = self.obs_type_info[obs_key]['l1_vec']
 					Vs = self.obs_type_info[obs_key]['V']
-										
 					X[0,i] = np.random.choice(3,1,p=pi)
 					for t in range(1, self.T_vec[i]):
-						if X[t-1,i] != 1:
-							X[t,i] = X[t-1,i] # both 0 and 2 are absorbing state
+						if X[t-1,i] == 2:
+							X[t,i] = X[t-1,i] # 2 are absorbing state | no effort no transition
 						else:
-							if Vs[t]==1:
-								# X at t is determined by the transition matrix at t-1
-								X[t,i] = np.random.binomial(1, l_vec[t-1])+1
-							else:
-								X[t,i]  = 1 # no effort
-					
+							if X[t-1,i] == 0:
+								X[t,i] = np.random.binomial(1, l0_vec[t-1])
+							elif X[t-1,i] == 1:
+								X[t,i] = np.random.binomial(1, l1_vec[t-1])+1
+
 			elif method == "FB":
 				# forward recursion
 				
@@ -388,17 +476,18 @@ class BKT_HMM_MCMC(object):
 				for k in range(self.K):
 					# check for the observation type
 					obs_key = self.obs_type_ref[k]
+					init_p_vec = self.obs_type_info[obs_key]['init_p']
 					sample_p_vec = self.obs_type_info[obs_key]['sample_p']
 					for t in range(self.T_vec[k]-1,-1,-1):
 						if t == self.T_vec[k]-1:
-							X[t,k] = np.random.choice(3,1,p=sample_p_vec[t,:])
+							X[t,k] = np.random.choice(3,1,p=init_p_vec)
 						else:
 							next_state = int(X[t+1,k])
-							if next_state !=2:
+							if next_state ==2:
 								X[t,k] = next_state # 0 can only comes from 0, 1 can only comes from 1 because of the left to right constraint
 							else:
-								p = sample_p_vec[t,next_state]
-								X[t,k] = np.random.binomial(1,p)+1
+								p_vec = sample_p_vec[t,next_state,:]
+								X[t,k] = np.random.choice(3, 1, p_vec)
 
 				
 			
@@ -415,36 +504,45 @@ class BKT_HMM_MCMC(object):
 					l_j = self.item_data[t,k]
 					is_v = self.V_array[t,k]
 					o_j = self.item_data[t,k]
-					y = self.observ_data[t-1,k]
+					x0 = X[t-1,k]
+					x1 = X[t,k]
 					# if the transition happens at t, item in t-1 should take the credit
 					# The last item does not contribute the the learning rate
 					# update l
-					if t>0 and X[t-1,k] == 1 and is_v>0:
+					if t>0 and x0 !=2 and is_v>0:
 						#P(X_t=1,X_{t-1}=0,V_t=1)/P(X_{t-1}=0,V_t=1)
-						tot_trans[l_j,y] += 1
-						if X[t,k] == 2:
-							critical_trans[l_j,y] += 1
+						tot_trans[l_j, x0] += 1
+						if x1-x0==1:
+							critical_trans[l_j, x0] += 1
 					if t>0:
-						if X[t-1,k]!=0:
-							x = X[t-1,k]
-							valid_cnt[o_j,x] += is_v
-							valid_state_cnt[o_j,x] += 1			
+						valid_cnt[o_j, x0] += is_v
+						valid_state_cnt[o_j, x0] += 1			
 					# update obs_cnt
-					obs_cnt[o_j, (X[t,k]-1)*is_v+1, self.observ_data[t,k]] += 1 #P(Y=0,V=1,X=1)/P(X=1,V=1) = s; P(Y_t=1,V_t=0)+P(Y_t=1,V_t=1,X_t=0))/(P(V_t=0)+P(X_t=0,V_t=1)) =g
+					if is_v:
+						obs_cnt[o_j, x1, self.observ_data[t,k]] += 1 #P(Y=0,V=1,X=1)/P(X=1,V=1) = s; P(Y_t=1,V_t=0)+P(Y_t=1,V_t=1,X_t=0))/(P(V_t=0)+P(X_t=0,V_t=1)) =g
 					
 			for j in range(self.J):
 				self.l0[j] =  np.random.beta(self.prior_param['l'][0]+critical_trans[j,0], self.prior_param['l'][1]+tot_trans[j,0]-critical_trans[j,0])
 				self.l1[j] =  np.random.beta(self.prior_param['l'][0]+critical_trans[j,1], self.prior_param['l'][1]+tot_trans[j,1]-critical_trans[j,1])
-				self.s[j] =  np.random.beta(self.prior_param['s'][0]+obs_cnt[j,2,0], self.prior_param['s'][1]+obs_cnt[j,2,1])
-				self.g[j] =  np.random.beta(self.prior_param['g'][0]+obs_cnt[j,1,1], self.prior_param['g'][1]+obs_cnt[j,1,0])
 				
-			#ipdb.set_trace()
-			
-			
+				# prevent label switching
+				c_mat = np.zeros((3,3))
+				while not((c_mat[0,1]<c_mat[1,1:].sum()) and (c_mat[1,2]<c_mat[2,2])):
+					# this is hard coded for state  = 3
+					c_mat[0,1] = np.random.beta(self.prior_param['c0'][0]+obs_cnt[j,0,1], self.prior_param['c0'][1]+obs_cnt[j,0,0])
+					c_mat[1,:] = np.random.dirichlet((self.prior_param['c1'][0]+obs_cnt[j,1,0], self.prior_param['c1'][1]+obs_cnt[j,1,1], self.prior_param['c1'][2]+obs_cnt[j,1,2]))
+					c_mat[2,2] = np.random.beta(self.prior_param['c2'][0]+obs_cnt[j,2,2], self.prior_param['c2'][1]+obs_cnt[j,2,1])
+					
+					c_mat[0,0] = 1-c_mat[0,1]
+					c_mat[2,1] = 1-c_mat[2,2]
+				self.c[j] = c_mat
+
 			nX0 = len([x for x in X[0,:] if x==0])
+			nX1 = len([x for x in X[0,:] if x==1])
 			nX2 = len([x for x in X[0,:] if x==2])
-			self.pi0 = np.random.beta(self.prior_param['pi'][0]+nX0, self.prior_param['pi'][1]+self.K-nX0)
-			self.pi =  np.random.beta(self.prior_param['pi'][0]+nX2, self.prior_param['pi'][1]+self.K-nX2)
+			pis = np.random.dirichlet((self.prior_param['pi'][0]+nX0, self.prior_param['pi'][1]+nX1, self.prior_param['pi'][2]+nX2))
+			self.pi0 = pis[0]
+			self.pi = pis[2]
 			
 			if is_exit:
 				# Separate out the model for X = 0 and X!=0. Under the assumption of no trasnition, this is valid
@@ -509,8 +607,7 @@ class BKT_HMM_MCMC(object):
 				
 				# check for sanity
 				if any([h>1 for h in self.h0]) or any([h>1 for h in self.h1]) or any([h>1 for h in self.h2]):
-					raise ValueException('Hazard rate is larger than 1.')
-				
+					raise ValueError('Hazard rate is larger than 1.')		
 			else:
 				self.h0 = [0.0 for t in range(self.T)]
 				self.h1 = [0.0 for t in range(self.T)]
@@ -518,20 +615,19 @@ class BKT_HMM_MCMC(object):
 			
 			if is_effort:
 				for j in range(self.J):
-					self.e1[j] = np.random.beta(self.prior_param['e1'][0]+valid_cnt[j,1], self.prior_param['e1'][1]+valid_state_cnt[j,1]-valid_cnt[j,1])
-					self.e2[j] = np.random.beta(self.prior_param['e2'][0]+valid_cnt[j,2], self.prior_param['e2'][1]+valid_state_cnt[j,2]-valid_cnt[j,2])
+					for i in range(3):
+						self.e[i][j] = np.random.beta(self.prior_param['e'][0]+valid_cnt[j,i], self.prior_param['e'][1]+valid_state_cnt[j,i]-valid_cnt[j,i])
 			
-			# imposing constraint on s or g
-			if 's' in fixVal:
-				for j in range(self.J):
-					self.s[j] = fixVal['s']
-			if 'g' in fixVal:
-				for j in range(self.J):
-					self.g[j] = fixVal['g']			
-			self.parameter_chain[iter, :] = [self.pi0, self.pi] + self.s + self.g + self.e1 + self.e2 + self.l0 + self.l1 + [self.Lambda] + self.betas
+			params = [self.pi0, self.pi] + [self.c[j][0,1] for j in range(self.J)] +\
+											[self.c[j][1,1] for j in range(self.J)] + [self.c[j][1,2] for j in range(self.J)]+ [self.c[j][2,2] for j in range(self.J)] +\
+											self.l0 + self.l1 + self.e[0] + self.e[1] + self.e[2] + [self.Lambda] + self.betas 
+			#ipdb.set_trace()
+			self.parameter_chain[iter, :] = params
 			self._update_derivative_parameter()
 			self.X = X
-
+			
+			#ipdb.set_trace()
+			
 	def _get_point_estimation(self, start, end):
 		# calcualte the llk for the parameters
 		gap = max(int((end-start)/100), 10)
@@ -539,25 +635,25 @@ class BKT_HMM_MCMC(object):
 		avg_parameter = parameter_candidates.mean(axis=0).tolist()
 		return avg_parameter
 				
-	def estimate(self, init_param, data_array, method='FB', max_iter=1000, is_exit=False, is_effort=False, is_uninit=False, fixVal={}):
+	def estimate(self, init_param, data_array, method='FB', max_iter=1000, is_exit=False, is_effort=False, fixVal={}):
 		param = copy.deepcopy(init_param)
 		# ALL items share the same prior for now
-		self.g = param['g']  # guess
-		self.s = param['s']  # slippage
+		self.c = np.array(param['c'])  # guess
 		self.pi = param['pi']  # initial prob of mastery
 		self.l0 = param['l0']  # learn speed
 		self.l1 = param['l1']
 		self.pi0 = param['pi0']
 		
 		if (self.pi+self.pi0)>1:
-			raise ValueException('pi0 + pi >1')
+			raise ValueError('pi0 + pi >1')
+		
+		if self.c[0].shape != (3,3):
+			raise ValueError('Correct rate is not specified to 3 states.')
 		
 		if is_effort:
-			self.e1 = param['e1'] 
-			self.e2 = param['e2']
+			self.e = param['e'] 
 		else:
-			self.e1 = [1.0]*len(param['s'])
-			self.e2 = [1.0]*len(param['s'])
+			self.e = [[1.0]*self.c.shape[0]]*3
 		
 		if is_exit:
 			self.Lambda = param['Lambda']  # harzard rate with response 0
@@ -577,43 +673,43 @@ class BKT_HMM_MCMC(object):
 		
 		# for now, assume flat prior for the hazard rate
 		self.prior_param = {'l': [2, 2],
-							's': [1, 2],
-							'e1': [2, 2],
-							'e2':[2, 2],
-							'g': [1, 2],
-							'pi':[2, 2],
-							'pi0':[1,4]}
-		
+							'e': [2, 2],
+							'c0': [1, 3],
+							'c1': [1,1,1],
+							'c2': [2, 2],
+							'pi':[1, 2, 2]}
+
 		self._load_observ(data_array)
-		self._MCMC(max_iter, method, fixVal, is_exit, is_effort, is_uninit)
+		self._MCMC(max_iter, method, fixVal, is_exit, is_effort)
 		res = self._get_point_estimation(int(max_iter/2), max_iter)
 		#ipdb.set_trace()
-		self.pi0 = res[0]; 
-		self.pi = res[1]
-		self.s = res[2+self.J*0:2+self.J]
-		self.g = res[2+self.J:2+self.J*2]
-		self.e1 = res[2+self.J*2:2+self.J*3]
-		self.e2 = res[2+self.J*3:2+self.J*4]
-		self.l0 = res[2+self.J*4:2+self.J*5]
-		self.l1 = res[2+self.J*5:2+self.J*6]
-		self.Lambda = res[2+self.J*6:2+self.J*6+1]
-		self.betas =  res[2+self.J*6+1:]	
+		pi0 = res[0]; 
+		pi = res[1]
+		c01 = res[2+self.J*0:2+self.J*1]
+		c11 = res[2+self.J*1:2+self.J*2]
+		c12 = res[2+self.J*2:2+self.J*3]		
+		c22 = res[2+self.J*3:2+self.J*4]
+		l0 =	res[2+self.J*4:2+self.J*5]
+		l1 =	res[2+self.J*5:2+self.J*6]
+		e0 =	res[2+self.J*6:2+self.J*7]		
+		e1 = 	res[2+self.J*7:2+self.J*8]
+		e2 = 	res[2+self.J*8:2+self.J*9]
+		Lambda = res[2+self.J*9:2+self.J*9+1]
+		betas =  res[2+self.J*9+1:]	
 		
-		return self.pi0, self.pi, self.s, self.g, self.e1, self.e2, self.l0, self.l1, self.Lambda, self.betas
+		return pi0, pi, c01, c11, c12, c22, l0, l1, e0, e1, e2, Lambda, betas
 		
 if __name__=='__main__':
+
 	# UNIT TEST
 	
 	# check for the marginal
-	s = [0.05]
-	g = [0.2]
+	c = [[0.1],[0.6],[0.95]]
 	pi0 = 0.1
 	pi = 0.5
 	l0 = [0.2]
 	l1 = [0.4]
-
-	e1 = [0.85]
-	e2 = [0.9]
+	e = [[0.5],[0.6],[0.9]]
 	J = [0,0,0]
 	V = [1,1,1]
 	nJ = 1
@@ -625,10 +721,8 @@ if __name__=='__main__':
 	h1 = [0.1, 0.15, 0.225]
 	h2 = [0.05, 0.075, 0.1125]
 	
-	init_param = {'s':copy.copy(s),
-			  'g':copy.copy(g), 
-			  'e1':copy.copy(e1),
-			  'e2':copy.copy(e2),
+	init_param = {'c':copy.copy(c), 
+			  'e':copy.copy(e),
 			  'pi':copy.copy(pi),
 			  'l0':copy.copy(l0),
 			  'l1':copy.copy(l1),
@@ -636,17 +730,18 @@ if __name__=='__main__':
 			  'Lambda':copy.copy(Lambda),
 			  'betas':copy.copy(betas),
 			  }	
-	data_array = [(0,0,0,0,0,0),(0,1,0,0,0,0),(0,2,0,0,1,0)] # E=1, O=[0,0,0], J = [0,0,0], V=[0,0,0]
-	obs_key = '1-0|0|0-0|0|0-0|0|0'			  
+	data_array = [(0,0,0,0,0,1),(0,1,0,0,0,1),(0,2,0,0,1,1)] # E=1, O=[0,0,0], J = [0,0,0], V=[1,1,1]
+	obs_key = '1-0|0|0-0|0|0-1|1|1'			  
 			  
 	
 	# derive the derative statistics
 	state_init_dist = np.array([pi0, 1-pi-pi0, pi]) 
-	state_transit_matrix = np.stack([np.array([[[[1,0,0],[0,1,0],[0,0,1]],[[1,0,0],[0,1,0],[0,0,1]]], [[[1,0,0],[0,1-l0[j], l0[j]], [0, 0, 1]],[[1,0,0],[0,1-l1[j], l1[j]], [0, 0, 1]]]]) for j in range(nJ)])
-	observ_prob_matrix = np.stack([ np.array([[1,0],[1-g[j], g[j]], [s[j], 1-s[j]]])  for j in range(nJ)] ) # index by state, observ
+	state_transit_matrix = np.stack([np.array([[[1,0,0],[0,1,0], [0, 0, 1]],[[1-l0[j], l0[j], 0],[0,1-l1[j], l1[j]], [0, 0, 1]]]) for j in range(nJ)])
+	observ_prob_matrix = np.stack([ np.array([[1-c[i][j],c[i][j]] for i in range(3)])  for j in range(nJ)] ) # index by state, observ
 	hazard_matrix = np.array([h0, h1, h2])	
-	valid_prob_matrix = np.stack([np.array([[1,0],[1-e1[j],e1[j]], [1-e2[j], e2[j]]]) for j in range(nJ)]) 	
-	'''
+	valid_prob_matrix = np.stack([np.array([[1-e[i][j],e[i][j]] for i in range(3)]) for j in range(nJ)]) 	
+	
+	
 	############ DG|Likelihood
 	
 	X = [0,0,0]
@@ -654,30 +749,35 @@ if __name__=='__main__':
 	E = 0
 	V = [1,1,1]	
 	
-	#px = 0.1*1.0*1.0
-	#po = 0.0*1.0*0.0
+	#px = 0.1*0.8*0.8
+	#po = 0.9*0.9*0.9
 	#pa = (1-0.2)*(1-0.3)*(1-0.45)
-	#pv = 0.0*0.0*0.0
-	#prob = (1-0.2)*(1-0.3)*(1-0.45)
+	#pv = 0.5*0.5*0.5
+	#prob = 0.1*0.8*0.8*0.9*0.9*0.9*(1-0.2)*(1-0.3)*(1-0.45)
 	prob = likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort=False)	
-	print([prob,0.308])	
+	print([prob,0.014370048])	
 
 	O = [1,0,1]
-	prob = likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort=False)	
-	print([prob,0.0])	
+	#px = 0.1*0.8*0.8
+	#po = 0.1*0.9*0.1
+	#pa = (1-0.2)*(1-0.3)*(1-0.45)
+	#pv = 0.5*0.5*0.5
+	#prob = 0.1*0.8*0.8*0.1*0.9*0.1*(1-0.2)*(1-0.3)*(1-0.45)*0.5*0.5*0.5	
+	prob = likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort=True)	
+	print([prob,2.2176E-05])	
 	
 	
-	X = [1,1,2] 
-	#px = 0.4*0.6*0.2
-	#po = 0.2*0.8*0.95
-	#pa = (1-0.1)*(1-0.15)*(1-0.1125)
-	#pv = 0.85*0.85*0.9
-	#prob = 0.4*0.6*0.2*0.2*0.8*0.95*(1-0.1)*(1-0.15)*(1-0.1125)*0.85*0.85*0.9
+	X = [0,1,2] 
+	#px = 0.1*0.2*0.4
+	#po = 0.1*0.4*0.95
+	#pa = (1-0.2)*(1-0.15)*(1-0.1125)
+	#pv = 0.5*0.6*0.9
+	#prob = 0.1*0.2*0.4*0.1*0.4*0.95*(1-0.2)*(1-0.15)*(1-0.1125)*0.5*0.6*0.9
 	prob = likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort=True)
-	print([prob, 0.003221031582])
+	print([prob, 4.953528E-05])
 	
 	
-	
+	'''
 	E = 1
 	#pa = (1-0.1)*(1-0.15)*0.1125
 	#prob =0.4*0.6*0.2*0.2*0.8*0.95*(1-0.1)*(1-0.15)*0.1125*0.85*0.85*0.9
@@ -707,154 +807,101 @@ if __name__=='__main__':
 	
 	
 	E = 1
-	X = [1,1,2]
+	O = [0,1,1]
+	X = [0,1,2]
 	V = [0,1,1]
-	# px = 0.4*0.6*0.2
-	# po = 0.2*0.8*0.95
-	# pa = (1-0.1)*(1-0.15)*0.1125
-	# pv = 0.15*0.85*0.9
-	# prob = 0.4*0.6*0.2*0.2*0.8*0.95*(1-0.1)*(1-0.15)*0.1125*0.15*0.85*0.9
+	# px = 0.1*0.2*0.4
+	# po = 1.0*0.6*0.95
+	# pa = (1-0.2)*(1-0.15)*0.1125
+	# pv = 0.5*0.6*0.9
+	# prob = 0.1*0.2*0.4*1.0*0.6*0.95*(1-0.2)*(1-0.15)*0.1125*0.5*0.6*0.9
 	prob = likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort=True)
-	print([prob, 7.2052902E-05])	
+	print([prob, 9.41868e-05])	
 	
 	
 	V = [0,0,1]
-	# px = 0.4*1*0.2
-	# pv = 0.15*0.15*0.9
-	# prob =  0.4*1*0.2*0.2*0.8*0.95*(1-0.1)*(1-0.15)*0.1125*0.15*0.15*0.9
 	prob = likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort=True)	
-	print([prob, 2.119203E-05])	
+	print([prob, 0])	
 	
-	V = [0,0,0]
-	prob = likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort=True)	
-	print([prob, 0.0])	
 	############ DG|Marginal Probability
-	# data item is i,t,j,y,e,v
-
-	
+	# data item is i,t,j,y,e,v	
 	x1 = BKT_HMM_MCMC()
 	try:
 		x1.estimate(init_param, data_array, method = 'DG', max_iter=1, is_effort=True, is_exit=True)
 	except:
 		pass
 	# the pattern is E-y-j-v
-	llk_vec = np.array( x1.obs_type_info['1-0|0|0-0|0|0-0|0|0']['llk_vec'] )
-	X_mat = generate_possible_states(3)
-	
-	# all four possible states are 
-	# 2,2,2: 0.5*1*1*	0.8*0.8*0.8*	(1-0.05)*(1-0.075)*0.1125 	*0.1*0.1*0.1	= 2.5308E-05
-	# 1,1,1: 0.4*1*1*	0.8*0.8*0.8*	(1-0.1)*(1-0.15)*0.225		*0.15*0.15*0.15 = .0001189728
-	# 0,0,0: 0.1*1*1* 	1.0*1.0*1.0*	(1-0.2)*(1-0.3)*0.45		*1.0*1.0*1.0 	= 0.0252
-	#P(O,E) = 2.5308E-05 + .0001189728 + 0.0252 = 0.0253442808
+	llk_vec = np.array( x1.obs_type_info[obs_key]['llk_vec'] )
+	X_mat = generate_states(3,max_level=2)
+	e = [[0.5],[0.6],[0.9]]
+
+	# all 7 possible states are 
+	# 2,2,2: 0.5*1.0*1.0*	0.05*0.05*0.05*	(1-0.05)*(1-0.075)*0.1125 	*0.9*0.9*0.9	= 4.5042802734375E-06
+	# 1,2,2: 0.4*0.4*1.0*	0.4*0.05*0.05*	(1-0.1)*(1-0.075)*0.1125	*0.6*0.9*0.9	= 7.28271E-06
+	# 1,1,2: 0.4*0.6*0.4*	0.4*0.4*0.05*	(1-0.1)*(1-0.15)*0.1125		*0.6*0.6*0.9	= 2.1415104E-05
+	# 1,1,1: 0.4*0.6*0.6*	0.4*0.4*0.4*	(1-0.1)*(1-0.15)*0.225		*0.6*0.6*0.6 	= 0.000342641664
+	# 0,1,2: 0.1*0.2*0.4*	0.9*0.4*0.05*	(1-0.2)*(1-0.15)*0.1125		*0.5*0.6*0.9	= 2.97432E-06	
+	# 0,1,1: 0.1*0.2*0.6*	0.9*0.4*0.4*	(1-0.2)*(1-0.15)*0.225		*0.5*0.6*0.6	= 4.758912E-05
+	# 0,0,1: 0.1*0.8*0.2*	0.9*0.9*0.4*	(1-0.2)*(1-0.3)*0.225		*0.5*0.5*0.6	= 9.79776E-05
+	# 0,0,0: 0.1*0.8*0.8*  	0.9*0.9*0.9*	(1-0.2)*(1-0.3)*0.45		*0.5*0.5*0.5 	= 0.001469664
+	#P(O,E) = 4.5042802734375E-06 + 7.28271E-06 + 2.1415104E-05 + 2.97432E-06 + .000342641664 + 4.758912E-05 + 9.79776E-05 + 0.001469664 = 0.00199404879827344
 	
 	# single state marginal
-	print(get_single_state_llk(X_mat, llk_vec, 0, 0)/llk_vec.sum(), .0252/0.0253442808) 
-	print(get_single_state_llk(X_mat, llk_vec, 0, 1)/llk_vec.sum(), .0001189728/0.0253442808)
-	print(get_single_state_llk(X_mat, llk_vec, 0, 2)/llk_vec.sum(), 2.5308E-05/0.0253442808) 
-	print(get_single_state_llk(X_mat, llk_vec, 1, 0)/llk_vec.sum(), .0252/0.0253442808) 
-	print(get_single_state_llk(X_mat, llk_vec, 1, 1)/llk_vec.sum(), .0001189728/0.0253442808)
-	print(get_single_state_llk(X_mat, llk_vec, 1, 2)/llk_vec.sum(), 2.5308E-05/0.0253442808)
+	print(get_single_state_llk(X_mat, llk_vec, 0, 0)/llk_vec.sum(), (2.97432E-06+4.758912E-05+9.79776E-05+0.001469664)/0.00199404879827344) 
+	print(get_single_state_llk(X_mat, llk_vec, 0, 1)/llk_vec.sum(), (7.28271E-06+2.1415104E-05+0.000342641664)/0.00199404879827344)
+	print(get_single_state_llk(X_mat, llk_vec, 0, 2)/llk_vec.sum(), 4.5042802734375E-06/0.00199404879827344) 
+	print(get_single_state_llk(X_mat, llk_vec, 1, 0)/llk_vec.sum(), (9.79776E-05+0.001469664)/0.00199404879827344) 
+	print(get_single_state_llk(X_mat, llk_vec, 1, 1)/llk_vec.sum(), (2.1415104E-05+2.97432E-06+0.000342641664+4.758912E-05)/0.00199404879827344)
+	print(get_single_state_llk(X_mat, llk_vec, 1, 2)/llk_vec.sum(), (4.5042802734375E-06+7.28271E-06)/0.00199404879827344)
 	
 	# two states marginal
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 0)/llk_vec.sum(), 0.0252/0.0253442808)# 
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 1)/llk_vec.sum(), 0)# 
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 0)/llk_vec.sum(), (9.79776E-05+0.001469664)/0.00199404879827344)# 
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 1)/llk_vec.sum(), (2.97432E-06+4.758912E-05)/0.00199404879827344)# 
 	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 2)/llk_vec.sum(), 0)
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 1)/llk_vec.sum(), .0001189728/0.0253442808)
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 2)/llk_vec.sum(), 0)
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 1)/llk_vec.sum(), (2.1415104E-05+0.000342641664)/0.00199404879827344)
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 2)/llk_vec.sum(), 7.28271E-06/0.00199404879827344)
 	print(get_joint_state_llk(X_mat, llk_vec, 1, 2, 1)/llk_vec.sum(), 0)# 0
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 2, 2)/llk_vec.sum(), 2.5308E-05/0.0253442808)
-	
-	
-	x2 = BKT_HMM_MCMC()
-	try:	
-		x2.estimate(init_param, data_array, method = 'DG', max_iter=1, is_effort=False, is_exit=True)
-	except:
-		pass
-	# the pattern is E-y-j-v
-	llk_vec = np.array( x2.obs_type_info['1-0|0|0-0|0|0-0|0|0']['llk_vec'] )
-	X_mat = generate_possible_states(3)
-	
-	# all four possible states are 
-	# 2,2,2: 0.5*1.0*1.0*	0.05*0.05*0.05*	(1-0.05)*(1-0.075)*0.1125 	= 6.1787109375E-06
-	# 1,2,2: 0.4*0.2*1.0*	0.8*0.05*0.05*	(1-0.1)*(1-0.075)*0.1125 	= 1.4985E-05
-	# 1,1,2: 0.4*0.8*0.2*	0.8*0.8*0.05*	(1-0.1)*(1-0.15)*0.1125 	= 0.000176256	
-	# 1,1,1: 0.4*0.8*0.8*	0.8*0.8*0.8*	(1-0.1)*(1-0.15)*0.225		= .022560768
-	# 0,0,0: 0.1*1.0*1.0* 	1.0*1.0*1.0*	(1-0.2)*(1-0.3)*0.45		= 0.0252
-	#P(O,E) = 6.1787109375E-06 + 1.4985E-05 + 0.000176256 + .022560768 + 0.0252 = .0479581877109375
-	
-	# single state marginal
-	print(get_single_state_llk(X_mat, llk_vec, 0, 0)/llk_vec.sum(), .0252/0.0479581877109375) 
-	print(get_single_state_llk(X_mat, llk_vec, 0, 1)/llk_vec.sum(), (1.4985E-05+.022560768+0.000176256)/0.0479581877109375)
-	print(get_single_state_llk(X_mat, llk_vec, 0, 2)/llk_vec.sum(), 6.1787109375E-06/0.0479581877109375) 
-	print(get_single_state_llk(X_mat, llk_vec, 1, 0)/llk_vec.sum(), .0252/0.0479581877109375) 
-	print(get_single_state_llk(X_mat, llk_vec, 1, 1)/llk_vec.sum(), (0.000176256+.022560768)/0.0479581877109375)
-	print(get_single_state_llk(X_mat, llk_vec, 1, 2)/llk_vec.sum(), (6.1787109375E-06+1.4985E-05)/0.0479581877109375)
-	
-	# two states marginal
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 0)/llk_vec.sum(), 0.0252/0.0479581877109375)# 
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 1)/llk_vec.sum(), 0)# 
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 2)/llk_vec.sum(), 0)
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 1)/llk_vec.sum(), (.000176256+.022560768)/0.0479581877109375)
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 2)/llk_vec.sum(), 1.4985E-05/0.0479581877109375)
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 2, 1)/llk_vec.sum(), 0)# 0
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 2, 2)/llk_vec.sum(), 6.1787109375E-06/0.0479581877109375)
-	ipdb.set_trace()
-	
-
-
-	test_data_array = [(0,0,0,0,0,1),(0,1,0,1,0,1),(0,2,0,0,0,1)] # E=1, O=[0,1,0], J = [0,0,0], V=[1,1,1]
-	obs_key = '0-0|1|0-0|0|0-1|1|1'	
-	init_param['l0'] = [0.3]
-	init_param['l1'] = [0.3]
-	x2t = BKT_HMM_MCMC()
-	x2t.estimate(init_param, test_data_array, method = 'DG', max_iter=1)
-
-	# the pattern is E-y-j-v
-	llk_vec = np.array( x2t.obs_type_info[obs_key]['llk_vec'] )
-	X_mat = generate_possible_states(3)	
-	# all four possible states are 
-	# 2,2,2: 0.5*1.0*1.0*	0.05*0.95*0.05 	= .0011875
-	# 1,2,2: 0.4*0.3*1.0*	0.8*0.95*0.05 	= .00456
-	# 1,1,2: 0.4*0.7*0.3*	0.8*0.2*0.05 	= 0.000672	
-	# 1,1,1: 0.4*0.7*0.7*	0.8*0.2*0.8		= .025088
-	#P(O) = .0011875 + .00456 + 0.000672 + .025088 = .0315075	
-	print(get_single_state_llk(X_mat, llk_vec, 0, 1)/llk_vec.sum(), (.00456+.025088+0.000672)/0.0315075)
-	print(get_single_state_llk(X_mat, llk_vec, 0, 2)/llk_vec.sum(), .0011875/0.0315075) 
-	print(get_single_state_llk(X_mat, llk_vec, 1, 1)/llk_vec.sum(), (0.000672+.025088)/0.0315075)
-	print(get_single_state_llk(X_mat, llk_vec, 1, 2)/llk_vec.sum(), (.0011875+.00456)/0.0315075)
-	
-	# two states marginal
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 1)/llk_vec.sum(), (.000672+.025088)/0.0315075)
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 2)/llk_vec.sum(), .00456/0.0315075)
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 2, 1)/llk_vec.sum(), 0)# 0
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 2, 2)/llk_vec.sum(), .0011875/0.0315075)
-
-	init_param['l0'] = [0.2]
-	init_param['l1'] = [0.4]	
-	
-	x2t = BKT_HMM_MCMC()
-	x2t.estimate(init_param, test_data_array, method = 'DG', max_iter=1)
-
-	# the pattern is E-y-j-v
-	llk_vec = np.array( x2t.obs_type_info[obs_key]['llk_vec'] )
-	X_mat = generate_possible_states(3)	
-	# all four possible states are 
-	# 2,2,2: 0.5*1.0*1.0*	0.05*0.95*0.05 	= .0011875
-	# 1,2,2: 0.4*0.2*1.0*	0.8*0.95*0.05 	= .00304
-	# 1,1,2: 0.4*0.8*0.4*	0.8*0.2*0.05 	= 0.001024	
-	# 1,1,1: 0.4*0.8*0.6*	0.8*0.2*0.8		= .024576
-	#P(O) = .0011875 + .00304 + .001024 + .024576 = .0298275	
-	print(get_single_state_llk(X_mat, llk_vec, 0, 1)/llk_vec.sum(), (.00304+.024576+.001024)/0.0298275)
-	print(get_single_state_llk(X_mat, llk_vec, 0, 2)/llk_vec.sum(), .0011875/0.0298275) 
-	print(get_single_state_llk(X_mat, llk_vec, 1, 1)/llk_vec.sum(), (.001024+.024576)/0.0298275)
-	print(get_single_state_llk(X_mat, llk_vec, 1, 2)/llk_vec.sum(), (.0011875+.00304)/0.0298275)
-	
-	# two states marginal
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 1)/llk_vec.sum(), (.001024+.024576)/0.0298275)
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 2)/llk_vec.sum(), .00304/0.0298275)
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 2, 1)/llk_vec.sum(), 0)# 0
-	print(get_joint_state_llk(X_mat, llk_vec, 1, 2, 2)/llk_vec.sum(), .0011875/0.0298275)
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 2, 2)/llk_vec.sum(), 4.5042802734375E-06/0.00199404879827344)
 	'''
+
+	test_data_array = [(0,0,0,0,0,1),(0,1,0,0,0,0),(0,2,0,1,0,1)] # E=0, O=[0,0,1], J = [0,0,0], V=[1,0,1]
+	obs_key = '0-0|0|1-0|0|0-1|0|1'
+	x2t = BKT_HMM_MCMC()
+	x2t.estimate(init_param, test_data_array, method = 'DG', max_iter=1, is_effort=True, is_exit=True)
+
+	# the pattern is E-y-j-v
+	llk_vec = np.array( x2t.obs_type_info[obs_key]['llk_vec'] )
+	X_mat = generate_states(3,max_level=2)
+	# all 7 possible states are 
+	# 2,2,2: 0.5*1.0*1.0*	0.05*1.0*0.95*	(1-0.05)*(1-0.075)*(1-0.1125) 	*0.9*0.1*0.9	= 0.00150031458984375
+	# 1,2,2: 0.4*0.0*1.0*	0.4*1.0*0.95*	(1-0.1)*(1-0.075)*(1-0.1125)	*0.6*0.1*0.9	= 0
+	# 1,1,2: 0.4*1.0*0.4*	0.4*1.0*0.95*	(1-0.1)*(1-0.15)*(1-0.1125)		*0.6*0.4*0.9	= 0.0089163504
+	# 1,1,1: 0.4*1.0*0.6*	0.4*1.0*0.6*	(1-0.1)*(1-0.15)*(1-0.225)		*0.6*0.4*0.6 	= 0.0049175424
+	# 0,1,2: 0.1*0.0*0.4*	0.9*1.0*0.95*	(1-0.2)*(1-0.15)*(1-0.1125)		*0.5*0.4*0.9	= 0
+	# 0,1,1: 0.1*0.0*0.6*	0.9*1.0*0.6*	(1-0.2)*(1-0.15)*(1-0.225)		*0.5*0.4*0.6	= 0
+	# 0,0,1: 0.1*1.0*0.2*	0.9*1.0*0.6*	(1-0.2)*(1-0.3)*(1-0.225)		*0.5*0.5*0.6	= 0.00070308
+	# 0,0,0: 0.1*1.0*0.8*  	0.9*1.0*0.1*	(1-0.2)*(1-0.3)*(1-0.45)		*0.5*0.5*0.5 	= 0.0002772
+	#P(O,E) = 0.00150031458984375 + 0 + 0.0089163504 + 0.0049175424 + 0 + 0 + 0.00070308 + 0.0002772 = 0.0163144873898438
+	
+	# single state marginal
+	print(get_single_state_llk(X_mat, llk_vec, 0, 0)/llk_vec.sum(), (0+0+0.00070308+0.0002772)/0.0163144873898438) 
+	print(get_single_state_llk(X_mat, llk_vec, 0, 1)/llk_vec.sum(), (0+0.0089163504+0.0049175424)/0.0163144873898438)
+	print(get_single_state_llk(X_mat, llk_vec, 0, 2)/llk_vec.sum(), 0.00150031458984375/0.0163144873898438) 
+	print(get_single_state_llk(X_mat, llk_vec, 1, 0)/llk_vec.sum(), (0.00070308+0.0002772)/0.0163144873898438) 
+	print(get_single_state_llk(X_mat, llk_vec, 1, 1)/llk_vec.sum(), (0.0089163504+0+0.0049175424+0)/0.0163144873898438)
+	print(get_single_state_llk(X_mat, llk_vec, 1, 2)/llk_vec.sum(), (0.00150031458984375+0)/0.0163144873898438)
+	
+	# two states marginal
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 0)/llk_vec.sum(), (0.00070308+0.0002772)/0.0163144873898438)# 
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 1)/llk_vec.sum(), (0+0)/0.0163144873898438)# 
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 0, 2)/llk_vec.sum(), 0)
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 1)/llk_vec.sum(), (0.0089163504+0.0049175424)/0.0163144873898438)
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 1, 2)/llk_vec.sum(), 0/0.0163144873898438)
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 2, 1)/llk_vec.sum(), 0)# 0
+	print(get_joint_state_llk(X_mat, llk_vec, 1, 2, 2)/llk_vec.sum(), 0.00150031458984375/0.0163144873898438)
+	ipdb.set_trace()
+
+	
 	data_array = [(0,0,0,0,0,0),(0,1,0,0,0,0),(0,2,0,0,1,0)] # E=1, O=[0,0,0], J = [0,0,0], V=[0,0,0]
 	obs_key = '1-0|0|0-0|0|0-0|0|0'		
 

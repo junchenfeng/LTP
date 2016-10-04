@@ -49,11 +49,13 @@ def likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist
 	
 	# P(O|X)
 	po = 1
+	pv = 1
 	# P(V|X)
 	if is_effort:
 		# The effort is generated base on the last X. The first effort choice is not modeled.
-		pv = np.product([valid_prob_matrix[J[t],X[t-1],V[t]] for t in range(1,T)])
-		
+		for t in range(1,T):
+			pv *= valid_prob_matrix[J[t],X[t-1],V[t]]
+	
 		for t in range(T):
 			if V[t]!=0:
 				po *= observ_prob_matrix[J[t], X[t], O[t]]
