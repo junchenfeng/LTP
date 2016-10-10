@@ -16,9 +16,13 @@ import matplotlib.pyplot as plt
 nS = 3
 max_obs = 2000
 L = 500
-### (2) Initiate the instance
+
 em_instance = BKT_HMM_EM()
 mcmc_instance = BKT_HMM_MCMC()
+
+
+'''
+### (2) Initiate the instance
 
 
 
@@ -123,7 +127,7 @@ init_param = { 'c':[[[0.5,0.5,0.0],[0.3,0.4,0.3],[0.0,0.5,0.5]]],
 			  'Lambda': 0.1,
 			  'betas': [0.1,0.1,-0.1,0.01,0.01]}
 
-'''
+
 init_param = { 'c':[[0.1],[0.6],[0.9]], 
 			  'e':[[1.0],[1.0],[1.0]],
 			  'pi0':0.1,			  
@@ -144,7 +148,7 @@ print(mcmc_pi0, mcmc_pi)
 print(mcmc_c01, mcmc_c11, mcmc_c12, mcmc_c22)
 print(mcmc_l0[0], mcmc_l1[0])
 #print(mcmc_s_fb[0], mcmc_g_fb[0], mcmc_pi0_fb, mcmc_pi_fb, mcmc_l0_fb[0], mcmc_l1_fb[0])
-'''
+
 
 #################################################
 ### (2) Single Factor Incomplete Spell
@@ -165,14 +169,19 @@ print(mcmc_Lambda)
 print('betas')
 print(mcmc_betas)
 ipdb.set_trace()
-
-
-
-
+'''
 
 ##################
 ### (2) effort  ##
 ##################
+init_param = { 'c':[[[0.7,0.3,0.0],[0.2, 0.6, 0.2],[0.0, 0.1, 0.9]]], 
+			  'e':[[0.17],[0.7],[0.99]],
+			  'pi0':0.25,			  
+			  'pi': 0.5,
+			  'l0': [0.5],
+			  'l1': [0.5],
+			  'Lambda': 0.3,
+			  'betas': [np.log(1.2), 0, np.log(0.7), 0, -.04]}
 
 file_path = proj_dir+'/data/bkt/test/single_sim_rl_3y_x_1_e.txt'
 
@@ -193,7 +202,7 @@ with open(file_path) as f:
 			  
 			  
 #em_s, em_g, em_pi, em_l = em_instance.estimate(init_param, full_data_array, max_iter = 20)
-mcmc_pi0, mcmc_pi, mcmc_c01, mcmc_c11, mcmc_c12, mcmc_c22, mcmc_l0, mcmc_l1, mcmc_e0, mcmc_e1, mcmc_e2, *rest = mcmc_instance.estimate(init_param, data_array, method='DG', max_iter = L, is_effort=True)
+mcmc_pi0, mcmc_pi, mcmc_c01, mcmc_c11, mcmc_c12, mcmc_c22, mcmc_l0, mcmc_l1, mcmc_e0, mcmc_e1, mcmc_e2, mcmc_e3, *rest = mcmc_instance.estimate(init_param, data_array, method='DG', max_iter = L, is_effort=True)
 #mcmc_pi_fb, mcmc_s_fb, mcmc_g_fb, mcmc_e0_fb,mcmc_e1_fb, mcmc_l_fb, *rest = mcmc_instance.estimate(init_param, data_array, method='FB', max_iter = L, is_exit=True)
 
 print('Full Data')

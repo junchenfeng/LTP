@@ -15,10 +15,10 @@ T = 5
 ########################
 # model parameters
 c = [[0.7,0.3,0.0],[0.2, 0.6, 0.2],[0.0, 0.1, 0.9]]
-pi0 = 0.2
-pi = 0.3
-l0 = 0.2
-l1 = 0.4
+pi0 = 0.25
+pi = 0.5
+l0 = 0.5
+l1 = 0.5
 Lambda = 0.3
 betas = [np.log(1.2), 0, np.log(0.7), 0, -.04] # 
 h1_vec = [Lambda*np.exp(betas[0]*t) for t in range(T)]
@@ -96,7 +96,7 @@ ipdb.set_trace()
 ########################
 #        Effort        # 		
 ########################
-e = [[0.2],[0.7],[1.0]]
+e = [[0.4],[0.6],[0.99]]
 effort_matrix = np.array([[1-e[i][0],e[i][0]] for i in range(3)])
 
 

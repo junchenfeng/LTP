@@ -1,13 +1,13 @@
 from setuptools import setup
 
 setup(
-    name='pyMLC',
+    name='LTP',
     version="0.0.1",
-    packages=['pyMLC',
-              'pyMLC/utl',
-              'pyMLC/solver',],
+    packages=['LTP',
+              'LTP/HMM',
+              'LTP/MLC',],
     license='MIT',
-    description='A python implementation of Mixture Learning Curve model.',
+    description='A python implementation of Learning Through Practices.',
     author='Junchen Feng',
     author_email='frankfeng.pku@gmail.com',
     install_requires=['numpy',
@@ -15,6 +15,6 @@ setup(
                       'cython', ],
     classifiers=[
                 'Intended Audience :: Developers',
-                'Programming Language :: Python :: 2.7',
+                'Programming Language :: Python :: 3.3',
                 ],
         )

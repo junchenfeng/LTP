@@ -9,7 +9,7 @@ data/hidden/*
 data/17data/*
 data/17zuoye/*
 data
-document/paper/manuscript.pdf
+sandbox
 
 ## Core latex/pdflatex auxiliary files:
 *.aux

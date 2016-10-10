@@ -38,7 +38,6 @@ class BKT_HMM_EM(object):
 		# initialize
 		self._update_derivative_parameter()  # learning spead
 		
-		
 	def _update_derivative_parameter(self):
 		self.state_transit_matrix = np.array([[1-self.l, self.l], [0, 1]])
 		self.state_init_dist = np.array([1-self.pi, self.pi])
