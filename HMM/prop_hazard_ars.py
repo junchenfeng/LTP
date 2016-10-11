@@ -153,10 +153,10 @@ class ARS():
 		# Derivative at first point in xi must be > 0
 		# Derivative at last point in xi must be < 0
 		if not(self.hprime[0] > 0): 
-			print (self.hprime)			 
+			#print (self.hprime)			 
 			raise IOError('initial anchor points must span mode of PDF')
 		if not(self.hprime[-1] < 0):
-			print (self.hprime) 
+			#print (self.hprime) 
 			raise IOError('initial anchor points must span mode of PDF')
 		self.insert() 
 
@@ -215,8 +215,8 @@ class ARS():
 		# check if any of the exp(u) is inf
 		if any([math.isnan(np.exp(u)) for u in self.u]):
 			# inf encountered, means poor initial value, debug by print x and u
-			print(self.x)
-			print(self.u)
+			#print(self.x)
+			#print(self.u)
 			raise Exception('X is poorly chosen.')
 		else:
 			self.s = np.hstack([0,np.cumsum(np.diff(np.exp(self.u))/self.hprime)])
@@ -274,9 +274,7 @@ class ars_sampler(object):
 		for i in range(self.N):
 			obs_key = str(self.D[i]) + '-' + '|'.join([str(x) for x in self.X[i,:]])
 			self.state_dict[obs_key] += 1
-			
-		
-		
+	
 	def sample_lambda(self,n=5):
 	
 		def f(x):

@@ -94,7 +94,7 @@ class LTP_HMM_MCMC(object):
 			raise Exception('Hazard rates are not set to 0 while disabled the update in hazard parameter.')
 		
 		if is_exit:
-			prop_hazard_mdls = [ars_sampler(self.Lambda, self.beta) for i in range(2)]
+			prop_hazard_mdls = [ars_sampler(self.Lambda, [self.beta]) for i in range(2)]
 			
 		self.param_chain = {'l': np.zeros((max_iter, (self.Mx-1)*self.J)),
 					   'pi':np.zeros((max_iter, self.Mx-1)),
@@ -163,8 +163,7 @@ class LTP_HMM_MCMC(object):
 							X[t,i] = X[t-1,i] # 2 are absorbing state | no effort no transition
 						else:
 							x =  X[t-1,i]
-							X[t,i] = np.random.binomial(1, l_vec[x][t-1])+x					
-				
+							X[t,i] = np.random.binomial(1, l_vec[x][t-1])+x						
 			else:
 				raise Exception('Algorithm %s not implemented.' % method)
 				
@@ -223,7 +222,7 @@ class LTP_HMM_MCMC(object):
 				for k in range(self.K):
 					for t in range(self.T_vec[k]):
 						idx = int(X[t,k] == self.Mx-1)
-						hX[idx].append((t))
+						hX[idx].append([t])
 						hD[idx].append(self.E_array[t,k])
 				# do a stratified sampling by t
 				for i in range(2):
@@ -244,25 +243,26 @@ class LTP_HMM_MCMC(object):
 						hIdx[i]  += idxs.tolist()
 				# estimate the mdodel
 				for i in range(2):
+					Nh = len(hIdx[i])
 					prop_hazard_mdls[i].load(np.array(hX[i])[hIdx[i],:], np.array(hD[i])[hIdx[i]])
+					
 					prop_hazard_mdls[i].Lambda = prop_hazard_mdls[i].sample_lambda()[-1]
 					prop_hazard_mdls[i].betas[0] = prop_hazard_mdls[i].sample_beta(0)[-1]	
 				
 				# reconfig
-				self.h0 = [prop_hazard_mdls[0].Lambda*np.exp(prop_hazard_mdls[0].beta[0]*t) for t in range(self.T)]
-				self.h1 = [prop_hazard_mdls[1].Lambda*np.exp(prop_hazard_mdls[1].beta[0]*t) for t in range(self.T)]
-				
+				self.h0 = [prop_hazard_mdls[0].Lambda*np.exp(prop_hazard_mdls[0].betas[0]*t) for t in range(self.T)]
+				self.h1 = [prop_hazard_mdls[1].Lambda*np.exp(prop_hazard_mdls[1].betas[0]*t) for t in range(self.T)]
 				# check for sanity
 				if any([h>1 for h in self.h0]) or any([h>1 for h in self.h1]):
 					raise ValueError('Hazard rate is larger than 1.')
-				self.hazard_matrix = [self.h0 for x in range(self.Mx-1)]
-				self.hazard_matrix.append(self.h1)
+				self.hazard_matrix = np.array([self.h0 for x in range(self.Mx-1)] + [self.h1])
+
 			else:
 				self.hazard_matrix = [[0.0 for t in range(self.T)] for x in range(self.Mx)]
 			
 			if is_effort:
 				for j in range(self.J):
-					self.valid_prob_matrix[j] = [np.random.dirichlet((self.prior_param['e'][0]+valid_cnt[j,x], self.prior_param['e'][1]+valid_state_cnt[j,x]-valid_cnt[j,x])) for x in self.Mx]
+					self.valid_prob_matrix[j] = [np.random.dirichlet((self.prior_param['e'][0]+valid_state_cnt[j,x]-valid_cnt[j,x], self.prior_param['e'][1]+valid_cnt[j,x])) for x in range(self.Mx)]
 			
 			#############################
 			# Step 3: Preserve the Chain#
@@ -287,15 +287,13 @@ class LTP_HMM_MCMC(object):
 			if is_exit:
 				h_vec = []
 				for i in range(2):
-					h_vec += [prop_hazard_mdls[i].Lambda, prop_hazard_mdls[i].beta[0] ]
+					h_vec += [prop_hazard_mdls[i].Lambda, prop_hazard_mdls[i].betas[0] ]
 				self.param_chain['h'][iter,:] = h_vec
 			
 			if is_effort:
-				e_vec = [self.valid_prob_matrix[j][1,:] for j in range(self.J)]
-				self.param_chain['e'][iter,:] = e_vec
+				self.param_chain['e'][iter,:] = self.valid_prob_matrix[:,:,1].flatten()
 			# update parameter chain here
 			self.X = X
-
 
 	def _get_point_estimation(self, start, end, is_exit, is_effort):
 		# calcualte the llk for the parameters
@@ -393,7 +391,9 @@ class LTP_HMM_MCMC(object):
 		
 		# Check input validity
 		if any([px==0 for px in self.state_init_dist]):
-			raise Exception('The initital distribution is degenerated.')			
+			raise Exception('The initital distribution is degenerated.')		
+
+		
 		self._MCMC(max_iter, method, is_exit, is_effort)
 		res = self._get_point_estimation(int(max_iter/2), max_iter, is_exit, is_effort)
 		

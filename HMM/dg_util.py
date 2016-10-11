@@ -86,6 +86,7 @@ def likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist
 	
 	# P(O|X)
 	po = 1
+	pv = 1
 	# P(V|X)
 	if is_effort:
 		# The effort is generated base on the last X. The first effort choice is not modeled.
@@ -98,7 +99,6 @@ def likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist
 			else:
 				po *= 1.0 if O[t] == 0 else 0.0 # this is a strong built in restriction	
 	else:
-		pv = 1
 		V = [1 for x in X]
 		for t in range(T):
 			po *= observ_prob_matrix[J[t],X[t],O[t]]
