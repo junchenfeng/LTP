@@ -1,15 +1,15 @@
 # Learning Through Practices(LTP)
 
-## Hidden Markov Model
+## 1.Hidden Markov Model
 
-### Bayesian Knowledge Tracing
+### 1.1 Bayesian Knowledge Tracing
 The canonical Bayesian Knowledge Tracing (BKT) is the special case of left-right HMM with a single item where the number of latent states and that of observe states are both TWO.
 
 The model can be fitted by EM algorithm or by MCMC algorithm.
 
 It should be noticed that the parameters of BKT are uniquely identified if the specification is right.
 
-### General LTP model with response only
+### 1.2 General LTP model with response only
 
 There are good reasons why the number of latent states or the number of observation states are more than two. For example, the zone of proximal development suggests the correct latent state is 3. For another example, partial credit can be roughly modeled as a three-state observation. Furthermore, rarely does the practice sequence consists of only ONE item. 
 
@@ -25,7 +25,28 @@ The observation matrix restricts P(Y=2|X=0)=P(Y=0|X=2) = 0.
 
 The state tranisiton matrix is only admits diagonal and first off-diagonal entry on the upper-right matrix.  P(Xt=i|Xt-1=i)!=0 P(Xt=i|Xt-1=i-1) != 0. All other entries are 0.
 
-### General LTP model with Different Spell Lengths and Effort Choice
+#### 1.2.1 Data Input
+The input has the format of (i,t,j,y), where
+
+* i: user id, starts from 0 and continuous integer
+* t: sequence id, starts from 0 and continuous integer
+* j: item id, starts from 0 and continuous integer 
+* y: discrete state of response. e.g, 0/1
+
+#### 1.2.2 Usage
+
+```python
+from LTP import LTP_HMM_MCMC
+mcmc_instance = LTP_HMM_MCMC()
+est_param = mcmc_instance.estimate(input_data)
+```
+
+#### 1.2.3 Demo
+For simulation, check the example at *demo/hmm_demo.py*
+
+
+
+### 1.3 General LTP model with Different Spell Lengths and Effort Choice
 Easter egg. Not sure it is ready for prime time.
 
 

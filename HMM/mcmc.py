@@ -13,9 +13,9 @@ import sys
 sys.path.append(proj_dir)
 
 
-from BKT.prop_hazard_ars import ars_sampler
-from BKT.util import draw_c, draw_l
-from BKT.dg_util import generate_states, get_single_state_llk, get_joint_state_llk, get_llk_all_states
+from HMM.prop_hazard_ars import ars_sampler
+from HMM.util import draw_c, draw_l
+from HMM.dg_util import generate_states, get_single_state_llk, get_joint_state_llk, get_llk_all_states
 
 import ipdb
 
@@ -78,23 +78,12 @@ class LTP_HMM_MCMC(object):
 			obs_type_key = str(self.E_vec[k]) + '-' + '|'.join(str(y) for y in self.O_data[k]) + '-' + '|'.join(str(j) for j in self.J_data[k]) + '-' + '|'.join(str(v) for v in self.V_data[k])
 			self.obs_type_cnt[obs_type_key] += 1
 			self.obs_type_ref[k] = obs_type_key
+		
 		# construct the space
 		self.obs_type_info = {}
 		for key in self.obs_type_cnt.keys():
 			e_s, O_s, J_s, V_s = key.split('-')
 			self.obs_type_info[key] = {'E':int(e_s), 'O':[int(x) for x in O_s.split('|')], 'J':[int(x) for x in J_s.split('|')], 'V':[int(x) for x in V_s.split('|')]}
-		for obs_key in self.obs_type_info.keys():
-			pi_vec = self.obs_type_info[obs_key]['pi']
-			P_mat = self.obs_type_info[obs_key]['P']
-			T = pi_vec.shape[0]
-			sample_p_vec = np.zeros((T,2))
-			for t in range(T-1,-1,-1):
-				if t == T-1:
-					sample_p_vec[t,1] = min(pi_vec[t,1],1.0)
-				else:
-					for x in range(0,2):
-						sample_p_vec[t,x] = min(P_mat[t,1,x]/P_mat[t,:,x].sum(), 1.0)
-			self.obs_type_info[obs_key]['sample_p'] = sample_p_vec
 				
 	def _MCMC(self, max_iter, method, is_exit=False, is_effort=False):
 		# initialize for iteration
@@ -107,21 +96,21 @@ class LTP_HMM_MCMC(object):
 		if is_exit:
 			prop_hazard_mdls = [ars_sampler(self.Lambda, self.beta) for i in range(2)]
 			
-		self.param_chain = {'l': np.zeros(max_iter, (self.Mx-1)*self.J)),
-					   'pi':np.zeros(max_iter, 2),
-					   'c': np.zeros(max_iter, (self.Mx*3-5)*self.J} # equivalent to a mapping of My = 2, c = self.Mx; My = 3, c=4*self.Mx
+		self.param_chain = {'l': np.zeros((max_iter, (self.Mx-1)*self.J)),
+					   'pi':np.zeros((max_iter, self.Mx-1)),
+					   'c': np.zeros((max_iter, (self.Mx*2-2)*self.J))
+					   } # equivalent to a mapping of My = 2, c = 2*self.J; My = 3, c=4*self.J
 			
 		if is_exit:
-			self.param_chain['h'] = np.zeros(max_iter, self.Mx*2)
+			self.param_chain['h'] = np.zeros((max_iter, self.Mx*2))
 			
 		if is_effort:
-			self.param_chain['e'] = np.zeros(max_iter, self.Mx*self.J)
+			self.param_chain['e'] = np.zeros((max_iter, self.Mx*self.J))
 			
 		for iter in tqdm(range(max_iter)):
 			#############################
 			# Step 1: Data Augmentation #
 			#############################
-			
 			if method == "DG":
 				# calculate the sample prob
 				for key in self.obs_type_info.keys():
@@ -137,12 +126,12 @@ class LTP_HMM_MCMC(object):
 					llk_vec = get_llk_all_states(X_mat, O, J, V, E, self.hazard_matrix, self.observ_prob_matrix, self.state_init_dist, self.state_transit_matrix, self.valid_prob_matrix, is_effort, is_exit)
 					
 					self.obs_type_info[key]['llk_vec'] = llk_vec
-					if abs(llk_vec.sum())<0.0000001:
+					if abs(llk_vec.sum())<1e-15:
 						ipdb.set_trace()
 						raise ValueError('All likelihood are 0.')
 					
 					
-					self.obs_type_info[key]['pi'] = [get_single_state_llk(X_mat, llk_vec, 0, x)/llk_vec.sum() for x in range(3)]
+					self.obs_type_info[key]['pi'] = [get_single_state_llk(X_mat, llk_vec, 0, x)/llk_vec.sum() for x in range(self.Mx)]
 					
 					l_vec = [[] for x in range(self.Mx-1)];				
 					for t in range(1,Ti):
@@ -200,9 +189,8 @@ class LTP_HMM_MCMC(object):
 					# if the transition happens at t, item in t-1 should take the credit
 					# The last item does not contribute the the learning rate
 					# update l
-					if t>0 and x0 !=2 and is_v>0:
+					if t>0 and x0 != self.Mx-1 and is_v>0:
 						#P(X_t=1,X_{t-1}=0,V_t=1)/P(X_{t-1}=0,V_t=1)
-						
 						if x1-x0==1:
 							critical_trans[l_j, x0] += 1
 						else:
@@ -213,19 +201,17 @@ class LTP_HMM_MCMC(object):
 					# update obs_cnt
 					if is_v:
 						obs_cnt[o_j, x1, self.observ_data[t,k]] += 1 #P(Y=0,V=1,X=1)/P(X=1,V=1) = s; P(Y_t=1,V_t=0)+P(Y_t=1,V_t=1,X_t=0))/(P(V_t=0)+P(X_t=0,V_t=1)) =g
-		
 			# update c	
 			for j in range(self.J):
 				c_params = [[self.prior_param['c'][x][y] + obs_cnt[j,x,y] for y in range(self.My)] for x in range(self.Mx)] 
-				self.observ_prob_matrix[j] = draw_c(c_params, self.Mx, sekf.My)
+				self.observ_prob_matrix[j] = draw_c(c_params, self.Mx, self.My)
 			# upate pi		
 			pi_params = [self.prior_param['pi'][x]+ np.sum(X[0,:]==x) for x in range(self.Mx)]
 			self.state_init_dist = np.random.dirichlet(pi_params)
-			
 			# update l
 			for j in range(self.J):
-				params = [[self.prior_param['l'][0]+critical_trans[j,x], self.prior_param['l'][1]+no_trans[j,x]] for x in range(self.Mx-1)]
-				self.state_transit_matrix[j] = draw_l(params)
+				params = [[self.prior_param['l'][0]+no_trans[j,x], self.prior_param['l'][1]+critical_trans[j,x]] for x in range(self.Mx-1)]
+				self.state_transit_matrix[j] = draw_l(params, self.Mx)
 			
 			if is_exit:
 				# Separate out the model for X = Mx and X!= Mx
@@ -269,7 +255,8 @@ class LTP_HMM_MCMC(object):
 				# check for sanity
 				if any([h>1 for h in self.h0]) or any([h>1 for h in self.h1]):
 					raise ValueError('Hazard rate is larger than 1.')
-				self.hazard_matrix = [self.h0 for x in range(self.Mx) if x<self.Mx-1 else self.h1]
+				self.hazard_matrix = [self.h0 for x in range(self.Mx-1)]
+				self.hazard_matrix.append(self.h1)
 			else:
 				self.hazard_matrix = [[0.0 for t in range(self.T)] for x in range(self.Mx)]
 			
@@ -277,15 +264,14 @@ class LTP_HMM_MCMC(object):
 				for j in range(self.J):
 					self.valid_prob_matrix[j] = [np.random.dirichlet((self.prior_param['e'][0]+valid_cnt[j,x], self.prior_param['e'][1]+valid_state_cnt[j,x]-valid_cnt[j,x])) for x in self.Mx]
 			
-			
 			#############################
 			# Step 3: Preserve the Chain#
 			#############################
+			
 			lHat_vec = []
 			for j in range(self.J):
 				lHat_vec += [self.state_transit_matrix[j][1][x,x+1] for x in range(self.Mx-1)]
 			self.param_chain['l'][iter,:] = lHat_vec
-			
 			self.param_chain['pi'][iter,:] = self.state_init_dist[0:-1]
 			
 			cHat_vec = []
@@ -296,9 +282,12 @@ class LTP_HMM_MCMC(object):
 					cHat_vec += [self.observ_prob_matrix[j][0,1], self.observ_prob_matrix[j][1,1], self.observ_prob_matrix[j][1,2], self.observ_prob_matrix[j][2,2]]
 				else:
 					raise ValueError('Number of latent state is wrong!')
-				
+			self.param_chain['c'][iter,:] = cHat_vec
+			
 			if is_exit:
-				h_vec = [prop_hazard_mdls[i].Lambda, prop_hazard_mdls[i].beta[0] for i in range(2)]
+				h_vec = []
+				for i in range(2):
+					h_vec += [prop_hazard_mdls[i].Lambda, prop_hazard_mdls[i].beta[0] ]
 				self.param_chain['h'][iter,:] = h_vec
 			
 			if is_effort:
@@ -385,39 +374,27 @@ class LTP_HMM_MCMC(object):
 				self.prior_param = prior_dist
 			
 			self.state_init_dist = np.random.dirichlet(self.prior_param['pi'])
-			self.state_transit_matrix = [draw_l([self.prior_param['l'] for x in range(self.Mx-1) ]) for j in range(self.J)]
-			self.valid_prob_matrix = [[np.random.dirichlet(self.prior_param['e']) for x in self.Mx] for j in self.J]
-			self.observ_prob_matrix = [draw_c(self.prior_param['c'], self.Mx, sekf.My) for j in self.J]
+			self.state_transit_matrix = np.array([draw_l([self.prior_param['l'] for x in range(self.Mx-1)], self.Mx) for j in range(self.J)])
+			self.observ_prob_matrix = np.array([draw_c(self.prior_param['c'], self.Mx, self.My) for j in range(self.J)])
+			
+			if is_effort:
+				self.valid_prob_matrix = np.array([[np.random.dirichlet(self.prior_param['e']) for x in range(self.Mx)] for j in range(self.J)])
+			else:
+				self.valid_prob_matrix = np.zeros((self.J, self.Mx, 2))
+				self.valid_prob_matrix[:,:,1] = 1.0
 			
 			if is_exit:
 				self.Lambda = 0.1
 				self.beta = 0.01
-				self.hazard_matrix = [[self.Lambda*np.exp(self.beta*t) for t in range(self.T)] for x in range(self.Mx)]
+				self.hazard_matrix = np.array([[self.Lambda*np.exp(self.beta*t) for t in range(self.T)] for x in range(self.Mx)])
 			else:
-				self.hazard_matrix = [[0.0 for t in range(self.T)] for x in range(self.Mx)]
+				self.hazard_matrix = np.array([[0.0 for t in range(self.T)] for x in range(self.Mx)])
 		
 		
 		# Check input validity
-			
-		if not is_exit and self.Lambda !=0:
-			raise Exception('Under no exit regime, baseline hazard rate should be zero.')
-		
 		if any([px==0 for px in self.state_init_dist]):
-			raise Exception('The initital distribution is degenerated.')
-		
-		# check for number of latent states
-		if len(self.state_init_dist) != self.Mx:
-			raise Exception('The initial distribution has the wrong size.')
-
-		
-		
+			raise Exception('The initital distribution is degenerated.')			
 		self._MCMC(max_iter, method, is_exit, is_effort)
-		res = self._get_point_estimation(int(max_iter/2), max_iter)
-		
-
+		res = self._get_point_estimation(int(max_iter/2), max_iter, is_exit, is_effort)
 		
 		return res
-		
-if __name__=='__main__':
-
-		

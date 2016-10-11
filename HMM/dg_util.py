@@ -1,5 +1,6 @@
 # encoding: utf-8
 import numpy as np
+import copy
 
 def generate_possible_states(T):
 	# because of the left-right constraints, the number of states is not 3^T

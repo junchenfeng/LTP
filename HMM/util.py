@@ -2,6 +2,7 @@
 # TODO: Update the learning curve generator
 # TODO: Add the joint response generator
 import numpy as np
+import ipdb
 
 def update_mastery(mastery, learn_rate):
 	return mastery + (1-mastery)*learn_rate
@@ -39,6 +40,7 @@ def draw_c(param, Mx, My, max_iter=100):
 		raise ValueError('Observation matrix is wrong on observation dimension.')
 
 	c_mat = np.zeros((Mx, My))
+	iter_cnt = 0
 	if Mx ==3:
 		while not((c_mat[0,1]<c_mat[1,1:].sum()) and (c_mat[1,2]<c_mat[2,2])) and iter_cnt<max_iter:
 			# this is hard coded for state  = 3
@@ -54,18 +56,20 @@ def draw_c(param, Mx, My, max_iter=100):
 			c_mat[0,:] = np.random.dirichlet(param[0])
 			c_mat[1,:] = np.random.dirichlet(param[1])
 			
-	if iter_cnt == max_iter
+	if iter_cnt == max_iter:
 		raise Exception('Observation matrix is not generated for item %d.' % j)
 		
 	return c_mat
 	
 def draw_l(params, Mx):
 	
-	l_param = np.zeros(2, Mx, Mx)
+	l_param = np.zeros((2, Mx, Mx))
 	l_param[0] = np.identity(Mx)
 	l_param[1] = np.zeros(Mx)
 	for x in range(Mx-1):
-		l_param[1][x,x:(x+1)] = np.random.dirichlet(params[x])
+		l_param[1][x,x:(x+2)] = np.random.dirichlet(params[x])
+	l_param[1][-1,-1] = 1
+	return l_param
 	
 if __name__ == '__main__':
 	lc0 = generate_learning_curve(0.05, 0.2, 0.4, 0.4, 5)
