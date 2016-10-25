@@ -179,25 +179,27 @@ class LTP_HMM_MCMC(object):
 			# update the sufficient statistics
 			for k in range(self.K):
 				for t in range(0, self.T_vec[k]):
-					l_j = self.item_data[t-1, k] # transition happens at t, item at t-1 takes credit
-					l_is_v = self.V_array[t-1,k]
+
 					
 					o_j = self.item_data[t,k]
 					o_is_v = self.V_array[t,k]
-					x0 = X[t-1,k]
 					x1 = X[t,k]
-
-					if t>0 and x0 != self.Mx-1 and l_is_v>0:
-						#P(X_t=1,X_{t-1}=0,V_(t-1)=1)/P(X_{t-1}=0,V_(t-1)=1)
-						if x1-x0==1:
-							critical_trans[l_j, x0] += 1
-						else:
-							no_trans[l_j, x0] += 1
-							
-					if t>0:
-						valid_cnt[o_j, x1] += o_is_v
-						valid_state_cnt[o_j, x1] += 1			
-					# update obs_cnt
+					
+					# update l
+					if t>0 and self.V_array[t-1,k]>0:
+						l_j = self.item_data[t-1, k] # transition happens at t, item at t-1 takes credit
+						x0 = X[t-1,k]
+						if x0 != self.Mx-1:
+							#P(X_t=1,X_{t-1}=0,V_(t-1)=1)/P(X_{t-1}=0,V_(t-1)=1)
+							if x1-x0==1:
+								critical_trans[l_j, x0] += 1
+							else:
+								no_trans[l_j, x0] += 1
+					# update e	
+					valid_cnt[o_j, x1] += o_is_v
+					valid_state_cnt[o_j, x1] += 1	
+					
+					# y
 					if o_is_v:
 						obs_cnt[o_j, x1, self.observ_data[t,k]] += 1 #P(Y=0,V=1,X=1)/P(X=1,V=1) = s; P(Y_t=1,V_t=0)+P(Y_t=1,V_t=1,X_t=0))/(P(V_t=0)+P(X_t=0,V_t=1)) =g
 			# update c	

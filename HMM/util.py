@@ -57,6 +57,7 @@ def draw_c(param, Mx, My, max_iter=100):
 			c_mat[1,:] = np.random.dirichlet(param[1])
 			
 	if iter_cnt == max_iter:
+		ipdb.set_trace()
 		raise Exception('Observation matrix is not generated.')
 		
 	return c_mat
