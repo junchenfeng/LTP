@@ -154,13 +154,11 @@ class LTP_HMM_MCMC(object):
 					# check the key
 					obs_key = self.obs_type_ref[i]
 					pi = self.obs_type_info[obs_key]['pi']
-					#ipdb.set_trace()
 					l_vec = self.obs_type_info[obs_key]['l_vec']
-					Vs = self.obs_type_info[obs_key]['V']
 					X[0,i] = np.random.choice(self.Mx, 1, p=pi)
 					for t in range(1, self.T_vec[i]):
 						if X[t-1,i] == self.Mx-1:
-							X[t,i] = X[t-1,i] # 2 are absorbing state | no effort no transition
+							X[t,i] = X[t-1,i] # The final state is absorbing state
 						else:
 							x =  X[t-1,i]
 							X[t,i] = np.random.binomial(1, l_vec[x][t-1])+x						
@@ -177,38 +175,44 @@ class LTP_HMM_MCMC(object):
 			obs_cnt = np.zeros((self.J,self.Mx,self.My)) # state,observ
 			valid_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
 			valid_state_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
+			
 			# update the sufficient statistics
 			for k in range(self.K):
 				for t in range(0, self.T_vec[k]):
-					l_j = self.item_data[t,k]
-					is_v = self.V_array[t,k]
+					l_j = self.item_data[t-1, k] # transition happens at t, item at t-1 takes credit
+					l_is_v = self.V_array[t-1,k]
+					
 					o_j = self.item_data[t,k]
+					o_is_v = self.V_array[t,k]
 					x0 = X[t-1,k]
 					x1 = X[t,k]
-					# if the transition happens at t, item in t-1 should take the credit
-					# The last item does not contribute the the learning rate
-					# update l
-					if t>0 and x0 != self.Mx-1 and is_v>0:
-						#P(X_t=1,X_{t-1}=0,V_t=1)/P(X_{t-1}=0,V_t=1)
+
+					if t>0 and x0 != self.Mx-1 and l_is_v>0:
+						#P(X_t=1,X_{t-1}=0,V_(t-1)=1)/P(X_{t-1}=0,V_(t-1)=1)
 						if x1-x0==1:
 							critical_trans[l_j, x0] += 1
 						else:
 							no_trans[l_j, x0] += 1
+							
 					if t>0:
-						valid_cnt[o_j, x0] += is_v
-						valid_state_cnt[o_j, x0] += 1			
+						valid_cnt[o_j, x1] += o_is_v
+						valid_state_cnt[o_j, x1] += 1			
 					# update obs_cnt
-					if is_v:
+					if o_is_v:
 						obs_cnt[o_j, x1, self.observ_data[t,k]] += 1 #P(Y=0,V=1,X=1)/P(X=1,V=1) = s; P(Y_t=1,V_t=0)+P(Y_t=1,V_t=1,X_t=0))/(P(V_t=0)+P(X_t=0,V_t=1)) =g
 			# update c	
 			for j in range(self.J):
 				c_params = [[self.prior_param['c'][x][y] + obs_cnt[j,x,y] for y in range(self.My)] for x in range(self.Mx)] 
-				self.observ_prob_matrix[j] = draw_c(c_params, self.Mx, self.My)
+				c_draws = draw_c(c_params, self.Mx, self.My)
+				self.observ_prob_matrix[j] = c_draws
+				
 			# upate pi		
 			pi_params = [self.prior_param['pi'][x]+ np.sum(X[0,:]==x) for x in range(self.Mx)]
 			self.state_init_dist = np.random.dirichlet(pi_params)
+			
 			# update l
 			for j in range(self.J):
+				#ipdb.set_trace()
 				params = [[self.prior_param['l'][0]+no_trans[j,x], self.prior_param['l'][1]+critical_trans[j,x]] for x in range(self.Mx-1)]
 				self.state_transit_matrix[j] = draw_l(params, self.Mx)
 			
@@ -252,6 +256,7 @@ class LTP_HMM_MCMC(object):
 				# reconfig
 				self.h0 = [prop_hazard_mdls[0].Lambda*np.exp(prop_hazard_mdls[0].betas[0]*t) for t in range(self.T)]
 				self.h1 = [prop_hazard_mdls[1].Lambda*np.exp(prop_hazard_mdls[1].betas[0]*t) for t in range(self.T)]
+				
 				# check for sanity
 				if any([h>1 for h in self.h0]) or any([h>1 for h in self.h1]):
 					raise ValueError('Hazard rate is larger than 1.')

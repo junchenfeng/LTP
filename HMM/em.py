@@ -89,7 +89,7 @@ class BKT_HMM_EM(object):
 		self._load_observ(data)
 		
 		#TODO: better convergence property
-		for i in tqdm(range(max_iter)):
+		for i in range(max_iter):
 			self._em_update()
 			if print_on:
 				print(self.s, self.g, self.pi, self.l)

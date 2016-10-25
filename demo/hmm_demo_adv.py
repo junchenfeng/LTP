@@ -13,7 +13,7 @@ This file demos the dgp and model fit for general LTP model that accounts for ef
 '''
 
 # meta parameters
-N = 2000
+N = 1000
 T = 5
 mcmc_instance = LTP_HMM_MCMC()
 
@@ -59,9 +59,11 @@ print(est_param_1)
 '''
 
 # Mx = 3, My = 3, J=2, Effort
+state_init_dist = np.array([0.4, 0.3, 0.3])
+
 observ_matrix = np.array([[[0.8,0.2,0.0],[0.2, 0.6, 0.2],[0.0, 0.2, 0.8]], 
 						  [[0.5,0.5,0.0],[0.3, 0.4, 0.3],[0.0, 0.1, 0.9]]])
-state_init_dist = np.array([0.4, 0.3, 0.3])
+						  
 state_transit_matrix = np.array([[[0.6,0.4,0],[0, 0.4, 0.6],[0, 0, 1]],
 								 [[0.2,0.8,0],[0, 0.7, 0.3],[0, 0, 1]]])
 
@@ -76,25 +78,26 @@ for i in range(N):
 		j =  np.random.binomial(1, pj)
 		if t ==0:
 			S = int( np.random.choice(3, 1, p=state_init_dist) )
-			E = int( np.random.binomial(1, valid_prob_matrix[j,S,1]) )
-		else:
-			# This is X from last period
-			E = int(np.random.binomial(1, valid_prob_matrix[j,S,1]))
-			if E ==1:
-				# no pain no gain
-				S = int( np.random.choice(3, 1, p=state_transit_matrix[j, S, :]) )
+		
+		E = int( np.random.binomial(1, valid_prob_matrix[j,S,1]) )
 
+
+		# response and feedback
 		# If E = 1, generate valid data
 		# If E = 0, generate 0
 		if E == 1:
 			y = int( np.random.choice(3, 1, p=observ_matrix[j, S,:]) )
 		else:
 			y = 0
-					
-	
+		
+		# learning			
+		if E ==1:
+			# no pain no gain
+			S = int( np.random.choice(3, 1, p=state_transit_matrix[j, S, :]) )
+			
 		data.append((i, t, j, y, 0, E))
 		
-est_param = mcmc_instance.estimate(data, max_iter = 250, is_effort=True)			
+est_param = mcmc_instance.estimate(data, max_iter = 100, is_effort=True)			
 print(est_param)	
 ipdb.set_trace()
 

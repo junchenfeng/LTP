@@ -69,7 +69,7 @@ def state_llk(X, J, V, init_dist, transit_matrix):
 	# transit matrix is np array [t-1,t]
 	#if X[0] == 1:
 	#	ipdb.set_trace()
-	prob = init_dist[X[0]]*np.product([transit_matrix[J[t], V[t], X[t-1], X[t]] for t in range(1,len(X))])
+	prob = init_dist[X[0]]*np.product([transit_matrix[J[t-1], V[t-1], X[t-1], X[t]] for t in range(1,len(X))])
 	return prob
 	
 def likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, valid_prob_matrix, is_effort = False, is_exit=False):
@@ -89,9 +89,9 @@ def likelihood(X, O, J, V, E, hazard_matrix, observ_prob_matrix, state_init_dist
 	pv = 1
 	# P(V|X)
 	if is_effort:
-		# The effort is generated base on the last X. The first effort choice is not modeled.
-		for t in range(1,T):
-			pv *= valid_prob_matrix[J[t],X[t-1],V[t]]
+		# The effort is generated base on the initial X.
+		for t in range(T):
+			pv *= valid_prob_matrix[J[t], X[t], V[t]]
 	
 		for t in range(T):
 			if V[t]!=0:

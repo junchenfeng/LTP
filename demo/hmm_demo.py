@@ -16,12 +16,14 @@ This file demos the dgp and model fit for response only LTP model
 # meta parameters
 N = 2000
 T = 5
+
+
+
+
+# Mx = 2, My = 2, J=1 (BKT)
 state_init_dist = np.array([0.6, 0.4])
 state_transit_matrix = np.array([[0.6, 0.4],[0, 1]])
 observ_matrix = np.array([[0.8,0.2],[0.2,0.8]])
-
-# Mx = 2, My = 2, J=1 (BKT)
-
 
 data = []
 j = 0
@@ -71,6 +73,7 @@ observ_prob_matrix = np.array([[[0.8,0.2],[0.2,0.8]], [[0.7,0.3],[0.05,0.95]]])
 pj = 0.3 # item 1 appears 30% of the time
 
 data = []
+
 for i in range(N):
 	for t in range(T):
 		# pick j
@@ -78,12 +81,17 @@ for i in range(N):
 
 		if t ==0:
 			S = int( np.random.binomial(1, state_init_dist[1]) )
-		else:
-			S = int( np.random.binomial(1, state_transit_matrix[j, S, 1]) )
+			
 
 		y = int( np.random.binomial(1, observ_prob_matrix[j, S, 1]) )
-		
 		data.append((i, t, j, y))
+		
+
+		S = int( np.random.binomial(1, state_transit_matrix[j, S, 1]) )
+
+
+
+
 
 mcmc_instance = LTP_HMM_MCMC()
 est_param = mcmc_instance.estimate(data, max_iter = 500)
