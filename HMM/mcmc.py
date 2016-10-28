@@ -95,8 +95,8 @@ class LTP_HMM_MCMC(object):
 		
 		if is_exit:
 			prop_hazard_mdls = [ars_sampler(self.Lambda, [self.beta]) for i in range(2)]
-			
-		param_chain = {'l': np.zeros((max_iter, (self.Mx-1)*self.J)),
+		lMx = int((self.Mx-1)*self.Mx*self.J/2)
+		param_chain = {'l': np.zeros((max_iter, lMx)), # for each item, the possible transition is (self.X-1 + 1)* (self.X-1)/2
 					   'pi':np.zeros((max_iter, self.Mx-1)),
 					   'c': np.zeros((max_iter, (self.Mx*(self.My-1))*self.J))
 					   } # equivalent to a mapping of My = 2, c = 2*self.J; My = 3, c=4*self.J
@@ -175,8 +175,7 @@ class LTP_HMM_MCMC(object):
 			# Step 2: Update Parameter  #
 			#############################
 			
-			critical_trans = np.zeros((self.J, self.Mx-1), dtype=np.int)
-			no_trans = np.zeros((self.J, self.Mx-1),dtype=np.int)
+			trans_matrix = np.zeros((self.J,self.Mx,self.Mx),dtype=np.int)
 			
 			obs_cnt = np.zeros((self.J,self.Mx,self.My)) # state,observ
 			valid_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
@@ -193,12 +192,8 @@ class LTP_HMM_MCMC(object):
 					if t>0 and self.V_array[t-1,k]>0:
 						l_j = self.item_data[t-1, k] # transition happens at t, item at t-1 takes credit
 						x0 = X[t-1,k]
-						if x0 != self.Mx-1:
-							#P(X_t=1,X_{t-1}=0,V_(t-1)=1)/P(X_{t-1}=0,V_(t-1)=1)
-							if x1-x0==1:
-								critical_trans[l_j, x0] += 1
-							else:
-								no_trans[l_j, x0] += 1
+						trans_matrix[l_j,x0,x1] += 1
+						
 					# update e	
 					valid_cnt[o_j, x1] += o_is_v
 					valid_state_cnt[o_j, x1] += 1	
@@ -218,8 +213,7 @@ class LTP_HMM_MCMC(object):
 			
 			# update l
 			for j in range(self.J):
-				#ipdb.set_trace()
-				params = [[self.prior_param['l'][0]+no_trans[j,x], self.prior_param['l'][1]+critical_trans[j,x]] for x in range(self.Mx-1)]
+				params = [[self.prior_param['l'][m][n]+trans_matrix[j,m,n] for n in range(self.Mx)] for m in range(self.Mx)]
 				self.state_transit_matrix[j] = draw_l(params, self.Mx)
 			
 			if is_exit:
@@ -281,7 +275,9 @@ class LTP_HMM_MCMC(object):
 			
 			lHat_vec = []
 			for j in range(self.J):
-				lHat_vec += [self.state_transit_matrix[j][1][x,x+1] for x in range(self.Mx-1)]
+				for m in range(self.Mx-1):
+					lHat_vec += self.state_transit_matrix[j,1,m,(m+1):self.Mx].tolist() 
+			
 			param_chain['l'][iter,:] = lHat_vec
 			param_chain['pi'][iter,:] = self.state_init_dist[0:-1]
 			
@@ -313,10 +309,10 @@ class LTP_HMM_MCMC(object):
 	
 
 
-	def _get_initial_param(self, init_param, prior_dist, is_exit, is_effort):
-		# c: probability of correct. Let cij=p(Y=j|X=i). In 2 state, [2*2]*nJ (1=c01,c11); In 3 state, [3*3]*nJ, (but c02=c20 =0)
+	def _get_initial_param(self, init_param, prior_dist, zero_mass_set, is_exit, is_effort):
+		# c: probability of correct. Let cij=p(Y=j|X=i). 
 		# pi: initial distribution of latent state, [Mx]
-		# l: learning rate/pedagogical efficacy, [Mx-1]*nJ
+		# l: learning rate/pedagogical efficacy, 
 		# e: probability of effort, [Mx]*nJ
 		# Lambda: harzard rate with at time 0. scalar
 		# betas: time trend of proportional hazard. scalar	
@@ -333,21 +329,29 @@ class LTP_HMM_MCMC(object):
 		else:
 			# generate parameters from the prior
 			if not prior_dist:
-				self.prior_param = {'l': [1, 1],
+				self.prior_param = {'l': [[int(m<=n) for n in range(self.Mx)] for m in range(self.Mx)], # encoding the non-regressive state
 									'e': [1, 1],
-									'pi':[1]*self.Mx}
-				# TODO: apply 0 constraints on the correct rate
-				if self.My==2:
-					self.prior_param['c'] = [[2,1],[1,2]]
-				elif self.My==3:
-					self.prior_param['c'] = [[1,1,0],[1,1,1],[0,1,1]]
+									'pi':[1]*self.Mx,
+									'c' :[[1 for y in range(self.My)] for x in range(self.Mx)]
+									}
 			else:
 				# TODO: check the specification of the prior
 				self.prior_param = prior_dist
 			
+			if zero_mass_set:
+				if 'X' in zero_mass_set:
+					for pos in zero_mass_set['X']:
+						m,n = pos
+						self.prior_param['l'][m][n] = 0
+				if 'Y' in zero_mass_set:
+					for pos in zero_mass_set['Y']:
+						m,n = pos
+						self.prior_param['c'][m][n] = 0
+			
 			self.state_init_dist = np.random.dirichlet(self.prior_param['pi'])
-			self.state_transit_matrix = np.array([draw_l([self.prior_param['l'] for x in range(self.Mx-1)], self.Mx) for j in range(self.J)])
+			self.state_transit_matrix = np.array([draw_l(self.prior_param['l'], self.Mx) for j in range(self.J)])
 			self.observ_prob_matrix = np.array([draw_c(self.prior_param['c'], self.Mx, self.My) for j in range(self.J)])
+			
 			
 			if is_effort:
 				self.valid_prob_matrix = np.array([[np.random.dirichlet(self.prior_param['e']) for x in range(self.Mx)] for j in range(self.J)])
@@ -366,7 +370,7 @@ class LTP_HMM_MCMC(object):
 		if any([px==0 for px in self.state_init_dist]):
 			raise Exception('The initital distribution is degenerated.')				
 	
-	def estimate(self, data_array, Mx=None, prior_dist = {}, init_param ={}, method='DG', max_iter=1000, chain_num = 4, is_exit=False, is_effort=False):
+	def estimate(self, data_array, Mx=None, prior_dist = {}, init_param ={}, zero_mass_set = {}, method='DG', max_iter=1000, chain_num = 4, is_exit=False, is_effort=False):
 		# data = [(i,t,j,y,e)]  
 		# i: learner id from 0:N-1
 		# t: sequence id, t starts from 0
@@ -380,23 +384,19 @@ class LTP_HMM_MCMC(object):
 		# nJ: the number of items
 		# K: the number of users
 		# T: longest 		
-		# Mx: the number of latent state. Transition matrix is defaults to left-right. only diagonal and upper first off diagonal element is non-negative
+		
+		# Mx: the number of latent state.
 		# Mx = My, unless otherwise specified
 		if not Mx:
 			self.Mx=self.My
 		else:
 			self.Mx=Mx
 		self._collapse_obser_state()
-
-		if self.My not in [2,3]:
-			raise ValueError('Number of observable state is wrong.')
-		if self.Mx not in [2,3]:
-			raise ValueError('Number of latent state is wrong.')
 		
 		# run MCMC
 		param_chain_vec = []
 		for iChain in range(chain_num):
-			self._get_initial_param(init_param, prior_dist, is_exit, is_effort)
+			self._get_initial_param(init_param, prior_dist, zero_mass_set, is_exit, is_effort)
 			tmp_param_chain = self._MCMC(max_iter, method, is_exit, is_effort)
 			param_chain_vec.append(tmp_param_chain)
 			

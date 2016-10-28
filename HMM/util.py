@@ -65,9 +65,8 @@ def draw_l(params, Mx):
 	l_param = np.zeros((2, Mx, Mx))
 	l_param[0] = np.identity(Mx)
 	l_param[1] = np.zeros(Mx)
-	for x in range(Mx-1):
-		l_param[1][x,x:(x+2)] = np.random.dirichlet(params[x])
-	l_param[1][-1,-1] = 1
+	for m in range(Mx):
+		l_param[1][m,:] = np.random.dirichlet(params[m])
 	return l_param
 
 def get_final_chain(param_chain_vec, start, end, is_exit, is_effort):
