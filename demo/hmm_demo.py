@@ -14,7 +14,7 @@ This file demos the dgp and model fit for response only LTP model
 '''
 
 # meta parameters
-N = 2000
+N = 1000
 T = 5
 
 
@@ -63,7 +63,7 @@ for i in range(N):
 mcmc_instance = LTP_HMM_MCMC()
 est_param = mcmc_instance.estimate(data, max_iter = 500)
 print(est_param)
-
+ipdb.set_trace()
 
 
 # Mx = 2, My = 2, J=2 (multi-BKT)

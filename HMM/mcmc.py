@@ -14,7 +14,7 @@ sys.path.append(proj_dir)
 
 
 from HMM.prop_hazard_ars import ars_sampler
-from HMM.util import draw_c, draw_l
+from HMM.util import draw_c, draw_l, get_map_estimation, get_final_chain
 from HMM.dg_util import generate_states, get_single_state_llk, get_joint_state_llk, get_llk_all_states
 
 import ipdb
@@ -96,16 +96,16 @@ class LTP_HMM_MCMC(object):
 		if is_exit:
 			prop_hazard_mdls = [ars_sampler(self.Lambda, [self.beta]) for i in range(2)]
 			
-		self.param_chain = {'l': np.zeros((max_iter, (self.Mx-1)*self.J)),
+		param_chain = {'l': np.zeros((max_iter, (self.Mx-1)*self.J)),
 					   'pi':np.zeros((max_iter, self.Mx-1)),
-					   'c': np.zeros((max_iter, (self.Mx*2-2)*self.J))
+					   'c': np.zeros((max_iter, (self.Mx*(self.My-1))*self.J))
 					   } # equivalent to a mapping of My = 2, c = 2*self.J; My = 3, c=4*self.J
 			
 		if is_exit:
-			self.param_chain['h'] = np.zeros((max_iter, self.Mx*2))
+			param_chain['h'] = np.zeros((max_iter, self.Mx*2))
 			
 		if is_effort:
-			self.param_chain['e'] = np.zeros((max_iter, self.Mx*self.J))
+			param_chain['e'] = np.zeros((max_iter, self.Mx*self.J))
 			
 		for iter in tqdm(range(max_iter)):
 			#############################
@@ -127,44 +127,50 @@ class LTP_HMM_MCMC(object):
 					
 					self.obs_type_info[key]['llk_vec'] = llk_vec
 					if abs(llk_vec.sum())<1e-15:
-						ipdb.set_trace()
 						raise ValueError('All likelihood are 0.')
 					
+					# pi
+					tot_llk=llk_vec.sum()
+					self.obs_type_info[key]['pi'] = [get_single_state_llk(X_mat, llk_vec, Ti-1, x)/tot_llk for x in range(self.Mx)]
 					
-					self.obs_type_info[key]['pi'] = [get_single_state_llk(X_mat, llk_vec, 0, x)/llk_vec.sum() for x in range(self.Mx)]
+					# learning rate
+					l_mat = np.zeros((Ti, self.Mx, self.Mx)) # T,X_{t+1},X_t		
+					for t in range(Ti-1,0,-1):
+						l_mat[t,0,0] = 1 # the 0 state in t, must implies 0 in t-1
+						for m in range(1,self.Mx):
+							pNext = get_single_state_llk(X_mat, llk_vec, t, m)
+							if pNext != 0:
+								for n in range(self.Mx):
+									# P(X_{t-1},X_t)/P(X_t)
+									l = get_joint_state_llk(X_mat, llk_vec, t, n, m) / pNext
+									if not(l>=0 and l<=1):
+										if not(l>1 and l-1<0.00001):
+											raise ValueError('Learning rate is wrong for X=%d.'%x)
+										else:
+											l = 1.0
+									l_mat[t,m,n] = l
+							# If pNext is 0, then there is no probability the state will transite in
+
+					self.obs_type_info[key]['l_mat'] = l_mat
 					
-					l_vec = [[] for x in range(self.Mx-1)];				
-					for t in range(1,Ti):
-						for x in range(self.Mx-1):
-							if get_single_state_llk(X_mat, llk_vec, t-1, x) != 0:
-								l = get_joint_state_llk(X_mat, llk_vec, t, x, x+1) / get_single_state_llk(X_mat, llk_vec, t-1, x)
-								if not(l>=0 and l<=1):
-									if l>1 and l-1<0.00001:
-										l = 1.0
-									else:
-										raise ValueError('Learning rate is wrong for X=%d.'%x)
-							else:
-								l = 0
-							l_vec[x].append(l)
-					self.obs_type_info[key]['l_vec'] = l_vec
-					
-				# sample states
+				# sample states backwards
 				X = np.empty((self.T, self.K),dtype=np.int)
 				for i in range(self.K):
 					# check the key
 					obs_key = self.obs_type_ref[i]
 					pi = self.obs_type_info[obs_key]['pi']
-					l_vec = self.obs_type_info[obs_key]['l_vec']
-					X[0,i] = np.random.choice(self.Mx, 1, p=pi)
-					for t in range(1, self.T_vec[i]):
-						if X[t-1,i] == self.Mx-1:
-							X[t,i] = X[t-1,i] # The final state is absorbing state
-						else:
-							x =  X[t-1,i]
-							X[t,i] = np.random.binomial(1, l_vec[x][t-1])+x						
+					l_mat = self.obs_type_info[obs_key]['l_mat']
+					Ti = self.T_vec[i]
+					
+					X[Ti-1,i] = np.random.choice(self.Mx, 1, p=pi)
+					for t in range(Ti-1, 0,-1):
+						pt = l_mat[t, X[t,i],:]
+						if pt.sum()==0:
+							raise Exception('Invalid transition kernel')
+						X[t-1,i] = np.random.choice(self.Mx, 1, p=pt)
+													
 			else:
 				raise Exception('Algorithm %s not implemented.' % method)
-				
 			#############################
 			# Step 2: Update Parameter  #
 			#############################
@@ -179,8 +185,6 @@ class LTP_HMM_MCMC(object):
 			# update the sufficient statistics
 			for k in range(self.K):
 				for t in range(0, self.T_vec[k]):
-
-					
 					o_j = self.item_data[t,k]
 					o_is_v = self.V_array[t,k]
 					x1 = X[t,k]
@@ -278,49 +282,91 @@ class LTP_HMM_MCMC(object):
 			lHat_vec = []
 			for j in range(self.J):
 				lHat_vec += [self.state_transit_matrix[j][1][x,x+1] for x in range(self.Mx-1)]
-			self.param_chain['l'][iter,:] = lHat_vec
-			self.param_chain['pi'][iter,:] = self.state_init_dist[0:-1]
+			param_chain['l'][iter,:] = lHat_vec
+			param_chain['pi'][iter,:] = self.state_init_dist[0:-1]
 			
 			cHat_vec = []
 			for j in range(self.J):
 				if self.Mx==2:
 					cHat_vec += [self.observ_prob_matrix[j][0,1], self.observ_prob_matrix[j][1,1]]
 				elif self.Mx==3:
-					cHat_vec += [self.observ_prob_matrix[j][0,1], self.observ_prob_matrix[j][1,1], self.observ_prob_matrix[j][1,2], self.observ_prob_matrix[j][2,2]]
+					cHat_vec += [self.observ_prob_matrix[j][0,1], self.observ_prob_matrix[j][0,2], self.observ_prob_matrix[j][1,1], self.observ_prob_matrix[j][1,2], self.observ_prob_matrix[j][2,1], self.observ_prob_matrix[j][2,2]]
 				else:
 					raise ValueError('Number of latent state is wrong!')
-			self.param_chain['c'][iter,:] = cHat_vec
+			param_chain['c'][iter,:] = cHat_vec
 			
 			if is_exit:
 				h_vec = []
 				for i in range(2):
 					h_vec += [prop_hazard_mdls[i].Lambda, prop_hazard_mdls[i].betas[0] ]
-				self.param_chain['h'][iter,:] = h_vec
+				param_chain['h'][iter,:] = h_vec
 			
 			if is_effort:
-				self.param_chain['e'][iter,:] = self.valid_prob_matrix[:,:,1].flatten()
+				param_chain['e'][iter,:] = self.valid_prob_matrix[:,:,1].flatten()
 			# update parameter chain here
 			self.X = X
+			#ipdb.set_trace()	
 
-	def _get_point_estimation(self, start, end, is_exit, is_effort):
-		# calcualte the llk for the parameters
-		gap = max(int((end-start)/100), 10)
-		select_idx = range(start, end, gap)
-		res = {}
-		res['l'] = self.param_chain['l'][select_idx, :].mean(axis=0).tolist()
-		res['c'] = self.param_chain['c'][select_idx, :].mean(axis=0).tolist()
-		res['pi'] = self.param_chain['pi'][select_idx, :].mean(axis=0).tolist()
-		
-		if is_exit:
-			res['h'] = self.param_chain['h'][select_idx, :].mean(axis=0).tolist()
-		
-		if is_effort:
-			res['e'] = self.param_chain['e'][select_idx, :].mean(axis=0).tolist()
+		return param_chain
 			
+
 	
-		return res
-				
-	def estimate(self, data_array, Mx=None, prior_dist = {}, init_param ={}, method='DG', max_iter=1000, is_exit=False, is_effort=False):
+
+
+	def _get_initial_param(self, init_param, prior_dist, is_exit, is_effort):
+		# c: probability of correct. Let cij=p(Y=j|X=i). In 2 state, [2*2]*nJ (1=c01,c11); In 3 state, [3*3]*nJ, (but c02=c20 =0)
+		# pi: initial distribution of latent state, [Mx]
+		# l: learning rate/pedagogical efficacy, [Mx-1]*nJ
+		# e: probability of effort, [Mx]*nJ
+		# Lambda: harzard rate with at time 0. scalar
+		# betas: time trend of proportional hazard. scalar	
+		if init_param:
+			# for special purpose, allow for pre-determined starting point.
+			param = copy.copy(init_param)
+			# ALL items share the same prior for now
+			self.observ_prob_matrix = param['c']
+			self.valid_prob_matrix = param['e']
+			self.state_init_dist = np.array(param['pi']) 
+			self.state_transit_matrix = param['l'] 
+			self.Lambda = param['Lambda'] 
+			self.beta = param['beta']
+		else:
+			# generate parameters from the prior
+			if not prior_dist:
+				self.prior_param = {'l': [1, 1],
+									'e': [1, 1],
+									'pi':[1]*self.Mx}
+				# TODO: apply 0 constraints on the correct rate
+				if self.My==2:
+					self.prior_param['c'] = [[2,1],[1,2]]
+				elif self.My==3:
+					self.prior_param['c'] = [[1,1,0],[1,1,1],[0,1,1]]
+			else:
+				# TODO: check the specification of the prior
+				self.prior_param = prior_dist
+			
+			self.state_init_dist = np.random.dirichlet(self.prior_param['pi'])
+			self.state_transit_matrix = np.array([draw_l([self.prior_param['l'] for x in range(self.Mx-1)], self.Mx) for j in range(self.J)])
+			self.observ_prob_matrix = np.array([draw_c(self.prior_param['c'], self.Mx, self.My) for j in range(self.J)])
+			
+			if is_effort:
+				self.valid_prob_matrix = np.array([[np.random.dirichlet(self.prior_param['e']) for x in range(self.Mx)] for j in range(self.J)])
+			else:
+				self.valid_prob_matrix = np.zeros((self.J, self.Mx, 2))
+				self.valid_prob_matrix[:,:,1] = 1.0
+			
+			if is_exit:
+				self.Lambda = 0.1
+				self.beta = 0.01
+				self.hazard_matrix = np.array([[self.Lambda*np.exp(self.beta*t) for t in range(self.T)] for x in range(self.Mx)])
+			else:
+				self.hazard_matrix = np.array([[0.0 for t in range(self.T)] for x in range(self.Mx)])
+		
+		# Check parameter validity
+		if any([px==0 for px in self.state_init_dist]):
+			raise Exception('The initital distribution is degenerated.')				
+	
+	def estimate(self, data_array, Mx=None, prior_dist = {}, init_param ={}, method='DG', max_iter=1000, chain_num = 4, is_exit=False, is_effort=False):
 		# data = [(i,t,j,y,e)]  
 		# i: learner id from 0:N-1
 		# t: sequence id, t starts from 0
@@ -347,61 +393,15 @@ class LTP_HMM_MCMC(object):
 		if self.Mx not in [2,3]:
 			raise ValueError('Number of latent state is wrong.')
 		
-		# c: probability of correct. Let cij=p(Y=j|X=i). In 2 state, [2*2]*nJ (1=c01,c11); In 3 state, [3*3]*nJ, (but c02=c20 =0)
-		# pi: initial distribution of latent state, [Mx]
-		# l: learning rate/pedagogical efficacy, [Mx-1]*nJ
-		# e: probability of effort, [Mx]*nJ
-		# Lambda: harzard rate with at time 0. scalar
-		# betas: time trend of proportional hazard. scalar
-		
-		if init_param:
-			# for special purpose, allow for pre-determined starting point.
-			param = copy.copy(init_param)
-			# ALL items share the same prior for now
-			self.observ_prob_matrix = param['c']
-			self.valid_prob_matrix = param['e']
-			self.state_init_dist = np.array(param['pi']) 
-			self.state_transit_matrix = param['l'] 
-			self.Lambda = param['Lambda'] 
-			self.beta = param['beta']
-		else:
-			# generate parameters from the prior
-			if not prior_dist:
-				self.prior_param = {'l': [1, 1],
-									'e': [1, 1],
-									'pi':[1]*self.Mx}
-				if self.My==2:
-					self.prior_param['c'] = [[1,1],[1,1]]
-				elif self.My==3:
-					self.prior_param['c'] = [[1,1,0],[1,1,1],[0,1,1]]
-			else:
-				# TODO: check the specification of the prior
-				self.prior_param = prior_dist
+		# run MCMC
+		param_chain_vec = []
+		for iChain in range(chain_num):
+			self._get_initial_param(init_param, prior_dist, is_exit, is_effort)
+			tmp_param_chain = self._MCMC(max_iter, method, is_exit, is_effort)
+			param_chain_vec.append(tmp_param_chain)
 			
-			self.state_init_dist = np.random.dirichlet(self.prior_param['pi'])
-			self.state_transit_matrix = np.array([draw_l([self.prior_param['l'] for x in range(self.Mx-1)], self.Mx) for j in range(self.J)])
-			self.observ_prob_matrix = np.array([draw_c(self.prior_param['c'], self.Mx, self.My) for j in range(self.J)])
-			
-			if is_effort:
-				self.valid_prob_matrix = np.array([[np.random.dirichlet(self.prior_param['e']) for x in range(self.Mx)] for j in range(self.J)])
-			else:
-				self.valid_prob_matrix = np.zeros((self.J, self.Mx, 2))
-				self.valid_prob_matrix[:,:,1] = 1.0
-			
-			if is_exit:
-				self.Lambda = 0.1
-				self.beta = 0.01
-				self.hazard_matrix = np.array([[self.Lambda*np.exp(self.beta*t) for t in range(self.T)] for x in range(self.Mx)])
-			else:
-				self.hazard_matrix = np.array([[0.0 for t in range(self.T)] for x in range(self.Mx)])
-		
-		
-		# Check input validity
-		if any([px==0 for px in self.state_init_dist]):
-			raise Exception('The initital distribution is degenerated.')		
-
-		
-		self._MCMC(max_iter, method, is_exit, is_effort)
-		res = self._get_point_estimation(int(max_iter/2), max_iter, is_exit, is_effort)
+		# process
+		self.param_chain = get_final_chain(param_chain_vec, int(max_iter/2), max_iter, is_exit, is_effort)	
+		res = get_map_estimation(self.param_chain,is_exit, is_effort)
 		
 		return res

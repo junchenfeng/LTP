@@ -42,19 +42,17 @@ def draw_c(param, Mx, My, max_iter=100):
 	c_mat = np.zeros((Mx, My))
 	iter_cnt = 0
 	if Mx ==3:
-		while not((c_mat[0,1]<c_mat[1,1:].sum()) and (c_mat[1,2]<c_mat[2,2])) and iter_cnt<max_iter:
+		#while not((c_mat[0,0]>c_mat[1,0]) and (c_mat[1,2]<c_mat[2,2])) and iter_cnt<max_iter:
 			# this is hard coded for state  = 3
 			# ensure that c02 and c20 is 0
-			c_mat[0,1] = np.random.beta(param[0][1],param[0][0])
-			c_mat[1,:] = np.random.dirichlet(param[1])
-			c_mat[2,2] = np.random.beta(param[2][2],param[2][1])
-			c_mat[0,0] = 1-c_mat[0,1]
-			c_mat[2,1] = 1-c_mat[2,2]
-			iter_cnt += 1 
+		for n in range(Mx):
+			c_mat[n,:] = np.random.dirichlet(param[n])
+			#iter_cnt += 1 
 	elif Mx ==2:
 		while not(c_mat[0,1]<c_mat[1,1]) and iter_cnt<max_iter:
-			c_mat[0,:] = np.random.dirichlet(param[0])
-			c_mat[1,:] = np.random.dirichlet(param[1])
+			for n in range(Mx):
+				c_mat[n,:] = np.random.dirichlet(param[n])
+			iter_cnt += 1 
 			
 	if iter_cnt == max_iter:
 		ipdb.set_trace()
@@ -71,6 +69,39 @@ def draw_l(params, Mx):
 		l_param[1][x,x:(x+2)] = np.random.dirichlet(params[x])
 	l_param[1][-1,-1] = 1
 	return l_param
+
+def get_final_chain(param_chain_vec, start, end, is_exit, is_effort):
+	# calcualte the llk for the parameters
+	gap = max(int((end-start)/100), 10)
+	select_idx = range(start, end, gap)
+	num_chain = len(param_chain_vec)
+	
+	# get rid of burn in
+	param_chain = {}
+	param_chain['l'] = np.vstack([param_chain_vec[i]['l'][select_idx, :] for i in range(num_chain)])
+	param_chain['c'] = np.vstack([param_chain_vec[i]['c'][select_idx, :] for i in range(num_chain)])
+	param_chain['pi'] = np.vstack([param_chain_vec[i]['pi'][select_idx, :] for i in range(num_chain)])
+	if is_exit:
+		param_chain['h'] = np.vstack([param_chain_vec[i]['h'][select_idx, :] for i in range(num_chain)])
+	if is_effort:
+		param_chain['e'] = np.vstack([param_chain_vec[i]['e'][select_idx, :] for i in range(num_chain)])
+
+	return param_chain
+	
+	
+def get_map_estimation(param_chain, is_exit, is_effort):
+	res = {}
+	res['l'] = param_chain['l'].mean(axis=0).tolist()
+	res['c'] = param_chain['c'].mean(axis=0).tolist()
+	res['pi'] = param_chain['pi'].mean(axis=0).tolist()
+	
+	if is_exit:
+		res['h'] = param_chain['h'].mean(axis=0).tolist()
+	
+	if is_effort:
+		res['e'] = param_chain['e'].mean(axis=0).tolist()
+		
+	return res	
 	
 if __name__ == '__main__':
 	lc0 = generate_learning_curve(0.05, 0.2, 0.4, 0.4, 5)
