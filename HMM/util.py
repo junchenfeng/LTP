@@ -3,7 +3,20 @@
 # TODO: Add the joint response generator
 import numpy as np
 import ipdb
+import random
+from itertools import accumulate
 
+def random_choice(p_vec):
+	cump=list(accumulate(p_vec))
+	n = len(p_vec)
+	
+	if abs(cump[n-1]-1)> 1e-6:
+		raise ValueException('probability does not add up to 1.')
+	rn = random.random()
+	for x in range(n):
+		if rn < cump[x]:
+			break
+	return x
 def update_mastery(mastery, learn_rate):
 	return mastery + (1-mastery)*learn_rate
 

@@ -34,8 +34,7 @@ def generate_incremental_states(state_basis, start_lv):
 			new_states[:,0:t] = np.vstack(np.tile(state_basis[0,0:t], (T-t, 1)))
 			new_states[:,t:] = generate_possible_states(T-t)[:-1,]+start_lv
 	return new_states
-			
-			
+					
 def generate_states(T, max_level=1):
 	# generate the basis
 	states = generate_possible_states(T)

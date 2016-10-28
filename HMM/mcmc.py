@@ -14,7 +14,7 @@ sys.path.append(proj_dir)
 
 
 from HMM.prop_hazard_ars import ars_sampler
-from HMM.util import draw_c, draw_l, get_map_estimation, get_final_chain
+from HMM.util import draw_c, draw_l, get_map_estimation, get_final_chain, random_choice
 from HMM.dg_util import generate_states, get_single_state_llk, get_joint_state_llk, get_llk_all_states
 
 import ipdb
@@ -106,7 +106,13 @@ class LTP_HMM_MCMC(object):
 			
 		if is_effort:
 			param_chain['e'] = np.zeros((max_iter, self.Mx*self.J))
-			
+		
+		# cache the generated states
+		X_mat_dict = {}
+		for t in range(1,self.T+1):
+			X_mat_dict[t] = generate_states(t, max_level=self.Mx-1)
+		
+		
 		for iter in tqdm(range(max_iter)):
 			#############################
 			# Step 1: Data Augmentation #
@@ -122,7 +128,7 @@ class LTP_HMM_MCMC(object):
 					
 					#calculate the exhaustive state probablity
 					Ti = len(O)		
-					X_mat = generate_states(Ti, max_level=self.Mx-1)
+					X_mat = X_mat_dict[Ti]
 					llk_vec = get_llk_all_states(X_mat, O, J, V, E, self.hazard_matrix, self.observ_prob_matrix, self.state_init_dist, self.state_transit_matrix, self.valid_prob_matrix, is_effort, is_exit)
 					
 					self.obs_type_info[key]['llk_vec'] = llk_vec
@@ -162,12 +168,12 @@ class LTP_HMM_MCMC(object):
 					l_mat = self.obs_type_info[obs_key]['l_mat']
 					Ti = self.T_vec[i]
 					
-					X[Ti-1,i] = np.random.choice(self.Mx, 1, p=pi)
+					X[Ti-1,i] = random_choice(pi)
 					for t in range(Ti-1, 0,-1):
 						pt = l_mat[t, X[t,i],:]
 						if pt.sum()==0:
 							raise Exception('Invalid transition kernel')
-						X[t-1,i] = np.random.choice(self.Mx, 1, p=pt)
+						X[t-1,i] = random_choice(pt.tolist())
 													
 			else:
 				raise Exception('Algorithm %s not implemented.' % method)

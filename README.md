@@ -13,17 +13,13 @@ It should be noticed that the parameters of BKT are uniquely identified if the s
 
 There are good reasons why the number of latent states or the number of observation states are more than two. For example, the zone of proximal development suggests the correct latent state is 3. For another example, partial credit can be roughly modeled as a three-state observation. Furthermore, rarely does the practice sequence consists of only ONE item. 
 
-The general LTP model, estimated with MCMC, allows for multi-item and multi-state HMM model. Unfortunately, the model is in general not uniquely identified. The package now allows for only 2 specifications.
+The general LTP model, estimated with MCMC, allows for multi-item and multi-state HMM model. 
 
-* Mx = My = 2
+The model imposes the "no-forgetting" constraints. P(X_t=m|X_{t-1}=n) = 0 if m<n 
 
-similar to BKT.
+The default model set the number of state of latent mastery (Mx) to 2. The number of state of the observed response (My) depends on the input data.
 
-* Mx=My = 3, 
-
-The observation matrix restricts P(Y=2|X=0)=P(Y=0|X=2) = 0. 
-
-The state tranisiton matrix is only admits diagonal and first off-diagonal entry on the upper-right matrix.  P(Xt=i|Xt-1=i)!=0 P(Xt=i|Xt-1=i-1) != 0. All other entries are 0.
+If My=2 and Mx=2, a default rank order is imposed according to BKT's tradition. Other than this specification, the user needs to specify his/her own rank order condition to prevent state switching.
 
 #### 1.2.1 Data Input
 The input has the format of (i,t,j,y), where
@@ -35,11 +31,35 @@ The input has the format of (i,t,j,y), where
 
 #### 1.2.2 Usage
 
+The default use where Mx=2
 ```python
 from LTP import LTP_HMM_MCMC
 mcmc_instance = LTP_HMM_MCMC()
 est_param = mcmc_instance.estimate(input_data)
 ```
+
+Change the number (default 4) and length(default 1000) of the markov chain
+```python
+est_param = mcmc_instance.estimate(input_data, max_iter=100, chain_num=1)
+```
+
+
+
+Add three states. Assume My=3, add rank order condition that P(Y=2|X=0)=P(Y=0|X=2) = 0
+```python
+zms = {'Y':[(0,2),(2,0)]} #(X,Y)
+est_param = mcmc_instance.estimate(input_data, zero_mass_set = zms)
+```
+
+Further add constraints that transition is local, P(Xt=m|Xt-1=n)=0 if m-n>1
+```python
+zms = {'Y':[(0,2),(2,0)], #(X,Y)
+		'X':[(0,2)] #(Xt-1,Xt)
+	}
+est_param = mcmc_instance.estimate(input_data, zero_mass_set = zms)
+```
+
+
 
 #### 1.2.3 Demo
 For simulation, check the example at *demo/hmm_demo.py*
