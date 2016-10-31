@@ -46,6 +46,15 @@ def logExpSum(llk_vec):
 	llk_sum = llk_max + np.log(np.exp(llk_vec-llk_max).sum())
 	return llk_sum
 
+def check_two_state_rank_order(c_mat):
+	# input c_mat has shape Mx,2, ensure c_mat[k,1]<c_mat[k+1,1]
+	Mx = c_mat.shape[0]
+	dif = 1
+	for k in range(1,Mx):
+		dif *= (c_mat[k,1] - c_mat[k-1,1])
+	return dif>0
+	
+	
 def draw_c(param, Mx, My, max_iter=100):
 	if len(param) != Mx:
 		raise ValueError('Observation matrix is wrong on latent state dimension.')
@@ -53,24 +62,18 @@ def draw_c(param, Mx, My, max_iter=100):
 		raise ValueError('Observation matrix is wrong on observation dimension.')
 
 	c_mat = np.zeros((Mx, My))
-	iter_cnt = 0
-	if Mx ==3:
-		#while not((c_mat[0,0]>c_mat[1,0]) and (c_mat[1,2]<c_mat[2,2])) and iter_cnt<max_iter:
-			# this is hard coded for state  = 3
-			# ensure that c02 and c20 is 0
-		for n in range(Mx):
-			c_mat[n,:] = np.random.dirichlet(param[n])
-			#iter_cnt += 1 
-	elif Mx ==2:
-		while not(c_mat[0,1]<c_mat[1,1]) and iter_cnt<max_iter:
+	if My == 2:
+		iter = 0
+		while not check_two_state_rank_order(c_mat)  and iter<max_iter:
 			for n in range(Mx):
 				c_mat[n,:] = np.random.dirichlet(param[n])
-			iter_cnt += 1 
-			
-	if iter_cnt == max_iter:
-		ipdb.set_trace()
-		raise Exception('Observation matrix is not generated.')
-		
+			iter+=1
+		if iter == max_iter:
+			raise Exception('C is not drew.')
+	else:
+		for n in range(Mx):
+			c_mat[n,:] = np.random.dirichlet(param[n])
+
 	return c_mat
 	
 def draw_l(params, Mx):

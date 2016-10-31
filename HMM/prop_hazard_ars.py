@@ -289,31 +289,46 @@ class ars_sampler(object):
 			bnds.append(np.exp(-np.dot(X,self.betas)))
 		bnd = min(bnds)
 		
-		#ipdb.set_trace()
-		if bnd<0.15:
-			raise Exception('Wrong initial value for lambda!')
-		#TODO: better first guess
 		is_fail = 0
-		try:
-			ug = min(bnd-0.1, 0.6)
-			ars = ARS(f, fprima, xi = [0.1, (ug+0.05)/2, ug], lb=0.05, ub=bnd)
-		except IOError as e1:
+		#TODO: better first guess
+		alternative_low_guess = [0.05, 0.01]
+		alternative_high_guess = [bnd-0.05, bnd-0.01, bnd-0.001]
+		# check if the default mode makes sense
+		guess_low = 0.1
+		guess_high = min(bnd-0.1, 0.6)
+		if fprima(guess_low)*fprima(guess_high)<0:
 			try:
-				ug = min(bnd-0.01, 0.6)
-				ars = ARS(f, fprima, xi = [0.1, (ug+0.05)/2, ug], lb=0.05, ub=bnd)
-			except IOError as e2:
-				try:
-					ug = min(bnd-0.001, 0.6)
-					ars = ARS(f, fprima, xi = [0.1, (ug+0.05)/2, ug], lb=0.05, ub=bnd)
-				except IOError as e3:
-					# if still no draw, keep the old draw
-					is_fail = 1
-					print('Lambda not drew.')
-					#raise(e3)
+				ars = ARS(f, fprima, xi = [guess_low, (guess_low+guess_high)/2, guess_high], lb=0.01, ub=bnd)
+			except:
+				is_fail = 1
+				#ipdb.set_trace()
+				print('Lambda not drew.')
+		else:
+			# check which side needs to be relaxed
+			is_legit = 0
+			if fprima(guess_low)<0:
+				for gl in alternative_low_guess:
+					if fprima(gl)>0:
+						guess_low = gl
+						is_legit = 1
+						break
+			if fprima(guess_high)>0:
+				for gh in alternative_high_guess:
+					if (gh<bnd) and fprima(gh)<0:
+						guess_high = gh
+						is_legit = 1
+						break
+			if is_legit:
+				ars = ARS(f, fprima, xi = [guess_low, (guess_low+guess_high)/2, guess_high], lb=0.01, ub=bnd)
+			else:
+				is_fail = 1
+				#ipdb.set_trace()
+				print('Lambda not drew.')
+
 		if not is_fail:
 			samples = ars.draw(n)
 		else:
-			samples = [self.Lambda]
+			samples = [min(self.Lambda,bnd-0.01)]
 
 		return samples
 		#plt.hist(samples, bins=100, normed=True)
@@ -340,42 +355,47 @@ class ars_sampler(object):
 				bnds.append( (-np.log(self.Lambda)-(np.dot(X,self.betas)-X[k]*self.betas[k]))/X[k] )
 		bnd = min(bnds)
 		
-		#ipdb.set_trace()
-		# put strong intuition on the stucture
-		lg = min(-0.8, self.betas[k]-0.1)
-		ug = bnd-0.01		
-		if k ==0:
-			# positive duration indedpendence, unlikely to rise faster than 50%
-			ug= min(ug,0.5)
-			lg= max(lg, -0.3)
-		elif k==1:
-			# the positive state is dobule or half
-			ug = min(ug,0.8)
-			lg = max(lg,-0.8)
-		elif k==2:
-			# the proportional is likely to be between -30% to 30%
-			ug= min(ug, 0.3)
-			lg= max(lg, -0.3)			
-		else:
-			raise ValueException('K is not specified')
-		
-		if lg>ug:
-			raise Exception('Wrong initial value for beta %d!'%k)	
-		
+		# check input validity
+		guess_low = min(-0.3, self.betas[k]-0.1)
+		guess_high = bnd-0.1
+		alternative_low_guess = [-0.4,-0.5,-0.6,-0.7,-0.8,-0.9]
+		alternative_high_guess = [bnd-0.05, bnd-0.01,bnd-0.001]
 		is_fail = 0
-		try:
-			ars = ARS(f, fprima, xi = [lg, (ug+lg)/2, ug], lb=-1, ub=bnd)
-		except IOError as e1:
+		if fprima(guess_low)*fprima(guess_high)<0:
 			try:
-				ars = ARS(f, fprima, xi = [lg, (ug+bnd-0.001)/2, bnd-0.001], lb=-1, ub=bnd)
-			except IOError as e2:
-					is_fail = 1
-					print('Beta %d not drew.' % k)
-					#raise(e3)
+				ars = ARS(f, fprima, xi = [guess_low, (guess_low+guess_high)/2, guess_high], lb=-1, ub=bnd)
+			except:
+				is_fail = 1
+				#ipdb.set_trace()
+				print('Beta not drew.')
+		else:		
+			is_legit = 0
+			if fprima(guess_low)<0:
+				for gl in alternative_low_guess:
+					if fprima(gl)>0:
+						guess_low = gl
+						is_legit = 1
+						break
+			if fprima(guess_high)>0:
+				for gh in alternative_high_guess:
+					if (gh<bnd) and fprima(gh)<0:
+						guess_high = gh
+						is_legit = 1
+						break		
+		
+			if guess_low>guess_high:
+				raise Exception('Wrong initial value for beta %d!'%k)	
+			if is_legit:
+				ars = ARS(f, fprima, xi = [guess_low, (guess_low+guess_high)/2, guess_high], lb=-1, ub=bnd)
+			else:
+				is_fail = 1
+				#ipdb.set_trace()
+				print('Beta not drew.')
+				
 		if not is_fail:
 			samples = ars.draw(n)
 		else:
-			samples = [self.betas[k]]
+			samples = [min(self.betas[k],bnd-0.001)]
 
 		return samples
 	
