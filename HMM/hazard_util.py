@@ -73,6 +73,7 @@ def prop_hazard(M, T_vec, S, H, Lambdas, betas):
 	for m in range(M):
 		hs = [prop_hazard_mdls[m].Lambda*np.exp(prop_hazard_mdls[m].betas[0]*t) for t in range(T)]
 		if any([h>1 for h in hs]):
+			ipdb.set_trace()
 			raise ValueError('Hazard rate is larger than 1.')
 		h_mat.append( hs )
 	hazard_matrix = np.array(h_mat)

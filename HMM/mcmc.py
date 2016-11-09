@@ -77,6 +77,7 @@ class LTP_HMM_MCMC(object):
 		self.obs_type_info = {}
 		for key in self.obs_type_cnt.keys():
 			H_s, O_s, J_s, E_s = key.split('-')
+
 			self.obs_type_info[key] = {'H':int(H_s), 'O':[int(x) for x in O_s.split('|')], 'J':[int(x) for x in J_s.split('|')], 'E':[int(x) for x in E_s.split('|')]}
 				
 	def _MCMC(self, max_iter, method='BFS', is_effort=False, is_exit=False, hazard_model='cell', hazard_state='X'):
@@ -407,13 +408,21 @@ class LTP_HMM_MCMC(object):
 		
 		# run MCMC
 		param_chain_vec = []
+		max_fit_iter = 10
+		fit_iter = 0
 		for iChain in range(chain_num):
-			self._get_initial_param(init_param, prior_dist, zero_mass_set, item_param_constraint, is_effort,is_exit,hazard_model,hazard_state)
-			try:
-				tmp_param_chain = self._MCMC(max_iter, method, is_effort, is_exit, hazard_model, hazard_state)
-			except:
-				# if failed, try again.
-				tmp_param_chain = self._MCMC(max_iter, method, is_effort, is_exit, hazard_model, hazard_state)
+			is_fit = 0
+			while not is_fit and fit_iter<max_fit_iter:
+				try:
+					self._get_initial_param(init_param, prior_dist, zero_mass_set, item_param_constraint, is_effort,is_exit,hazard_model,hazard_state)
+					tmp_param_chain = self._MCMC(max_iter, method, is_effort, is_exit, hazard_model, hazard_state)
+				except:
+					# if failed, try again.
+					is_fit = 0
+					fit_iter += 1
+					continue
+				is_fit = 1
+				
 			param_chain_vec.append(tmp_param_chain)
 			
 		# process
