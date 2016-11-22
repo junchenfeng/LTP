@@ -49,10 +49,12 @@ def logExpSum(llk_vec):
 def check_two_state_rank_order(c_mat):
 	# input c_mat has shape Mx,2, ensure c_mat[k,1]<c_mat[k+1,1]
 	Mx = c_mat.shape[0]
-	dif = 1
+	is_valid = True
 	for k in range(1,Mx):
-		dif *= (c_mat[k,1] - c_mat[k-1,1])
-	return dif>0
+		if c_mat[k,1] - c_mat[k-1,1]<=0:
+			is_valid=False
+			break
+	return is_valid
 	
 	
 def draw_c(param, Mx, My, max_iter=100):

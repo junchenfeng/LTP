@@ -292,7 +292,7 @@ class LTP_HMM_MCMC(object):
 				self.prior_param = {'l': [[int(m<=n) for n in range(self.Mx)] for m in range(self.Mx)], # encoding the non-regressive state
 									'e': [1, 1],
 									'pi':[1]*self.Mx,
-									'c' :[[1 for y in range(self.My)] for x in range(self.Mx)]
+									'c' :[[y+1 for y in range(self.My)] for x in range(self.Mx)]
 									}
 			else:
 				# TODO: check the specification of the prior
@@ -420,7 +420,8 @@ class LTP_HMM_MCMC(object):
 				is_fit = 0
 				while not is_fit and fit_iter<max_fit_iter:
 					try:
-						tmp_param_chain = _work(self,max_iter, method, is_effort, is_exit, hazard_model, hazard_state, init_param, prior_dist, zero_mass_set, item_param_constraint)
+						self._get_initial_param(init_param, prior_dist, zero_mass_set, item_param_constraint, is_effort,is_exit,hazard_model,hazard_state)
+						tmp_param_chain = self._MCMC(max_iter, method, is_effort, is_exit, hazard_model, hazard_state)
 					except:
 						print("Unexpected error:", sys.exc_info()[0])
 						# if failed, try again.
@@ -436,7 +437,7 @@ class LTP_HMM_MCMC(object):
 			) for i in range(chain_num))
 			
 		# process
-		ipdb.set_trace()
+		#ipdb.set_trace()
 		burn_in = min(300, int(max_iter/2))
 		self.param_chain = get_final_chain(param_chain_vec, burn_in, max_iter, is_exit, is_effort)	
 		res = get_map_estimation(self.param_chain,is_exit, is_effort)
