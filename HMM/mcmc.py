@@ -17,6 +17,7 @@ from HMM.bfs_util import generate_states, update_state_parmeters
 from HMM.hazard_util import prop_hazard, cell_hazard
 
 import ipdb	
+from joblib import Parallel, delayed
 
 class LTP_HMM_MCMC(object):
 
@@ -201,8 +202,6 @@ class LTP_HMM_MCMC(object):
 				c_draws = draw_c(c_params, self.Mx, self.My)
 				self.observ_prob_matrix[j] = c_draws			
 			
-
-			
 			# update h
 			if is_exit:
 				if hazard_model == 'prop':
@@ -377,12 +376,18 @@ class LTP_HMM_MCMC(object):
 		if any([px==0 for px in self.state_init_dist]):
 			raise Exception('The initital distribution is degenerated.')				
 	
+	def _work(self,max_iter, method, is_effort, is_exit, hazard_model, hazard_state, init_param, prior_dist, zero_mass_set, item_param_constraint):
+		self._get_initial_param(init_param, prior_dist, zero_mass_set, item_param_constraint, is_effort,is_exit,hazard_model,hazard_state)
+		param_chain = self._MCMC(max_iter, method, is_effort, is_exit, hazard_model, hazard_state)
+		return param_chain
+	
 	def estimate(self, data_array, 
 					   prior_dist={}, init_param={}, 
 					   Mx=None, zero_mass_set={}, item_param_constraint=[], 
 					   method='BFS', max_iter=1000, chain_num = 4, 
 					   is_effort=False,
-					   is_exit=False, hazard_model='cell', hazard_state='X'):
+					   is_exit=False, hazard_model='cell', hazard_state='X',
+					   is_parallel=True):
 		
 		# data = [(i,t,j,y,e,h)]  
 		# i: learner id from 0:N-1
@@ -407,25 +412,31 @@ class LTP_HMM_MCMC(object):
 		self._collapse_obser_state()
 		
 		# run MCMC
-		param_chain_vec = []
-		max_fit_iter = 10
-		fit_iter = 0
-		for iChain in range(chain_num):
-			is_fit = 0
-			while not is_fit and fit_iter<max_fit_iter:
-				try:
-					self._get_initial_param(init_param, prior_dist, zero_mass_set, item_param_constraint, is_effort,is_exit,hazard_model,hazard_state)
-					tmp_param_chain = self._MCMC(max_iter, method, is_effort, is_exit, hazard_model, hazard_state)
-				except:
-					# if failed, try again.
-					is_fit = 0
-					fit_iter += 1
-					continue
-				is_fit = 1
-				
-			param_chain_vec.append(tmp_param_chain)
+		if not is_parallel:
+			param_chain_vec = []
+			max_fit_iter = 10
+			fit_iter = 0
+			for iChain in range(chain_num):
+				is_fit = 0
+				while not is_fit and fit_iter<max_fit_iter:
+					try:
+						tmp_param_chain = _work(self,max_iter, method, is_effort, is_exit, hazard_model, hazard_state, init_param, prior_dist, zero_mass_set, item_param_constraint)
+					except:
+						print("Unexpected error:", sys.exc_info()[0])
+						# if failed, try again.
+						is_fit = 0
+						fit_iter += 1
+						continue
+					is_fit = 1
+					
+				param_chain_vec.append(tmp_param_chain)
+		else:
+			param_chain_vec = Parallel(n_jobs=chain_num)(delayed(self._work)(
+			max_iter, method, is_effort, is_exit, hazard_model, hazard_state, init_param, prior_dist, zero_mass_set, item_param_constraint
+			) for i in range(chain_num))
 			
 		# process
+		ipdb.set_trace()
 		burn_in = min(300, int(max_iter/2))
 		self.param_chain = get_final_chain(param_chain_vec, burn_in, max_iter, is_exit, is_effort)	
 		res = get_map_estimation(self.param_chain,is_exit, is_effort)

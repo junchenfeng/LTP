@@ -123,7 +123,8 @@ def update_state_parmeters(X_mat, Mx,
 								hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, effort_prob_matrix, 
 								is_effort, is_exit, hazard_state)
 	
-	if abs(llk_vec.sum())<1e-15:
+	if abs(llk_vec.sum())<1e-40:
+		ipdb.set_trace()
 		raise ValueError('All likelihood are 0.')
 	
 	# pi
