@@ -44,6 +44,7 @@ def state_llk(X, J, E, init_dist, transit_matrix):
 	#if X[0] == 1:
 	prob = init_dist[X[0]]*np.product([transit_matrix[J[t-1], E[t-1], X[t-1], X[t]] for t in range(1,len(X))])
 
+
 	return prob
 	
 def likelihood(X, O, E, H, J, item_ids, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, effort_prob_matrix, is_effort , is_exit, hazard_state):
@@ -92,12 +93,13 @@ def likelihood(X, O, E, H, J, item_ids, hazard_matrix, observ_prob_matrix, state
 	
 	return lk
 
-def get_llk_all_states(X_mat, O, E, H, J,item_ids, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, effort_prob_matrix, is_effort, is_exit, hazard_state):
+def get_llk_all_states(X_mat, O, E, H, J, item_ids, 
+					  hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, effort_prob_matrix, is_effort, is_exit, hazard_state):
 	N_X = X_mat.shape[0]
 	llk_vec = []
 	for i in range(N_X):
 		X = [int(x) for x in X_mat[i,:].tolist()]
-		llk_vec.append( likelihood(X, O, E, H, J, item_ids, hazard_matrix, observ_prob_matrix, state_init_dist,state_transit_matrix, effort_prob_matrix, is_effort, is_exit, hazard_state) )
+		llk_vec.append( likelihood(X, O, E, H, J, item_ids, hazard_matrix, observ_prob_matrix, state_init_dist, state_transit_matrix, effort_prob_matrix, is_effort, is_exit, hazard_state) )
 		
 	return np.array(llk_vec)
 
