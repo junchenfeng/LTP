@@ -1,7 +1,7 @@
 # encoding: utf-8
 import numpy as np
 import copy
-
+from collections import defaultdict
 
 def generate_states(T, max_level):
     states = np.zeros((max_level,T), dtype=int)
@@ -88,6 +88,60 @@ def update_state_parmeters(X_mat, Mx,
     return llk_vec, pis
 
 
+
+def data_etl(data_array):
+    '''
+    input: [i,j,y(,e)]
+
+    output: 
+    (1) user_dict: map input user id to consecutive int
+    (2) item_dict: map input item id to consecutive int
+    (3) data: [i,t,j,y(,e)] Add a t to indicate sequence length
+    '''
+
+    user_reverse_dict = {}
+    item_reverse_dict = {}
+    #user_dict = {}
+    item_dict = {}
+    user_counter = 0 # start from 0
+    item_counter = 0 # start from 0
+    tmp_dict = defaultdict(list)
+
+    # process
+    log_type = len(data_array[0])
+    for log in data_array:
+        if log_type == 3:
+            user_id, item_id, res = log
+        elif log_type == 4:
+            user_id, item_id, res, effort = log
+        else:
+            raise Exception('The log format is not recognized.')
+       
+        if user_id not in user_reverse_dict:
+            user_reverse_dict[user_id] = user_counter
+            #user_dict[user_counter] = user_id
+            user_counter += 1
+        if item_id not in item_reverse_dict:
+            item_reverse_dict[item_id] = item_counter
+            item_dict[item_counter] = item_id
+            item_counter += 1
+
+        user_id_val = user_reverse_dict[user_id]
+        item_id_val = item_reverse_dict[item_id]
+        log_key = str(user_id_val)+'#'+str(item_id_val)
+        t = len(tmp_dict[log_key])
+        if log_type == 3:
+            tmp_dict[log_key].append((user_id_val, t, item_id_val, res))
+        elif log_type == 4:
+            tmp_dict[log_key].append((user_id_val, t, item_id_val, res, effort))
+
+    # output
+    data = []
+    for logs in tmp_dict.values():
+        data += logs
+
+    return item_dict, data
+
 def get_final_chain(param_chain_vec, start, end, is_effort):
 	# calcualte the llk for the parameters
 	gap = max(int((end-start)/100), 10)
@@ -105,15 +159,13 @@ def get_final_chain(param_chain_vec, start, end, is_effort):
 	return param_chain
 	
 	
-def get_map_estimation(param_chain, is_effort):
-	res = {}
-	res['c'] = param_chain['c'].mean(axis=0).tolist()
-	res['pi'] = param_chain['pi'].mean(axis=0).tolist()
-	if is_effort:
-		res['e'] = param_chain['e'].mean(axis=0).tolist()
-		
-	return res	
-    
+def get_map_estimation(param_chain, field_name):	
+	return param_chain[field_name].mean(axis=0)
+
+
+def get_percentile_estimation(param_chain, field_name, pct):
+    return np.percentile(param_chain[field_name], pct ,axis=0)
+        
     
     
 if __name__ == '__main__':

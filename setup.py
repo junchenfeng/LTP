@@ -2,12 +2,14 @@ from setuptools import setup
 
 setup(
     name='LTP',
-    version="0.0.1",
+    version="0.0.2",
     packages=[
-                'LTP'
+                'LTP',
+                'LTP.HMM'
             ],
     package_dir = {
-        'LTP':'src/LTP'
+        'LTP':'src/LTP',
+        'LTP.HMM':'src/LTP/HMM'
         },
     license='MIT',
     description='A python implementation of Learning Through Practices.',
@@ -15,7 +17,8 @@ setup(
     author_email='frankfeng.pku@gmail.com',
     install_requires=['numpy',
                       'cython',
-                      'tqdm'],
+                      'tqdm',
+                      'joblib'],
     classifiers=[
                 'Intended Audience :: Developers',
                 'Programming Language :: Python :: 3.6',
