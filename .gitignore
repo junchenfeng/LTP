@@ -1,7 +1,7 @@
 ## hide python build
 build/*
 dist/*
-pyMLC.egg-info
+*.egg-info
 *.ipynb
 */.ipynb_checkpoints/*
 *.pyc
