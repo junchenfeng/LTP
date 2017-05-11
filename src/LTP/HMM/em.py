@@ -1,5 +1,4 @@
 import numpy as np
-import ipdb
 from tqdm import tqdm
 
 from collections import defaultdict
@@ -125,7 +124,6 @@ class BKT_HMM_EM(object):
 			obs_prob[k] = self.a_vec[self.T_vec[k]-1,k,:].sum()
 		obs_weight = 1/obs_prob
 		
-		#ipdb.set_trace()	
 		self.pi = self.r_vec[0,:,1].mean()
 		
 		
@@ -138,7 +136,6 @@ class BKT_HMM_EM(object):
 		self.l = nominator/denominator
 		
 		#self.l = np.dot(self.eta_vec_uncond[:,:,0,1].sum(axis=0), obs_weight) / np.dot(self.r_vec_uncond[:,:,0].sum(axis=0), obs_weight) 
-		#ipdb.set_trace()
 		# need to count the right and wrong
 		self.tmp = np.zeros((self.T, self.K, 2))
 		for k in range(self.K):

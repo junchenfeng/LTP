@@ -3,11 +3,9 @@ import os, sys
 import gevent
 from gevent import monkey;gevent.monkey.patch_all();
 
-proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, proj_dir)
 
-from utl.IO import data_loader
-from utl.utl import Z_assembly, list2array
+from ..utl.IO import data_loader
+from ..utl.utl import Z_assembly, list2array
 
 class RunNontrivialMLC(object):
     def init(self, K):

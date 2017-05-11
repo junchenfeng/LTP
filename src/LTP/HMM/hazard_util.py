@@ -2,14 +2,9 @@
 #TODO: Scale the proportional hazard model
 
 
-import os	  
-proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-import sys
-sys.path.append(proj_dir)
-from HMM.prop_hazard_ars import ars_sampler
+from .prop_hazard_ars import ars_sampler
 import numpy as np
 
-import ipdb
 
 def prop_hazard(M, T_vec, S, H, Lambdas, betas):
 
@@ -73,7 +68,6 @@ def prop_hazard(M, T_vec, S, H, Lambdas, betas):
 	for m in range(M):
 		hs = [prop_hazard_mdls[m].Lambda*np.exp(prop_hazard_mdls[m].betas[0]*t) for t in range(T)]
 		if any([h>1 for h in hs]):
-			#ipdb.set_trace()
 			raise ValueError('Hazard rate is larger than 1.')
 		h_mat.append( hs )
 	hazard_matrix = np.array(h_mat)

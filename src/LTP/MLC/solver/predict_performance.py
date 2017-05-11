@@ -1,10 +1,6 @@
-import os, sys
-proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, proj_dir)
-
 import numpy as np
 
-from utl.utl import update_mixture_density, predict_response
+from ..utl.utl import update_mixture_density, predict_response
 
 def forecast_spell_performance(response_list, learning_curve_matrix, prior_mixture_density=None):
     #TODO: this may not be the right interpretation

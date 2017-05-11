@@ -1,12 +1,6 @@
 # encoding:utf-8
 import numpy as np
-import os
-proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-import sys
-sys.path.append(proj_dir)
-from HMM.mcmc import LTP_HMM_MCMC
-import matplotlib.pyplot as plt
-import ipdb
+from LTP import LTP_HMM_MCMC
 
 '''
 This file demos the dgp and model fit for general LTP model that accounts for effort and attrition
@@ -99,5 +93,4 @@ for i in range(N):
 		
 est_param = mcmc_instance.estimate(data, max_iter = 100, is_effort=True)			
 print(est_param)	
-ipdb.set_trace()
 

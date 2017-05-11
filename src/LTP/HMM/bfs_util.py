@@ -1,7 +1,6 @@
 # encoding: utf-8
 import numpy as np
 import copy
-import ipdb
 
 def generate_states(T, max_level, delta_level):
 	states = []
@@ -126,7 +125,6 @@ def update_state_parmeters(X_mat, Mx,
 								is_effort, is_exit, hazard_state)
 	
 	if abs(llk_vec.sum())<1e-40:
-		ipdb.set_trace()
 		raise ValueError('All likelihood are 0.')
 	
 	# pi

@@ -1,8 +1,6 @@
 import numpy as np
 import random
 import math
-from matplotlib import pyplot as plt
-import ipdb
 from tqdm import tqdm
 from collections import defaultdict
 """
@@ -70,7 +68,6 @@ print(b1prime, b1prime_sim)
 
 def tot_llk(Lambda,betas,state_dict):
 	llks = 0
-	#ipdb.set_trace()
 	for obs_key, cnt in state_dict.items():
 		Ds,Xs = obs_key.split('-')
 		D = int(Ds)
@@ -80,7 +77,6 @@ def tot_llk(Lambda,betas,state_dict):
 
 def prime_tot_llk_lambda(Lambda,betas,state_dict):
 	llk_primes = 0
-	#ipdb.set_trace()
 	for obs_key, cnt in state_dict.items():
 		Ds,Xs = obs_key.split('-')
 		D = int(Ds)
@@ -90,7 +86,6 @@ def prime_tot_llk_lambda(Lambda,betas,state_dict):
 
 def prime_tot_llk_beta(Lambda,betas,state_dict,j):
 	llk_primes_beta = 0
-	#ipdb.set_trace()
 	for obs_key, cnt in state_dict.items():
 		Ds,Xs = obs_key.split('-')
 		D = int(Ds)
@@ -232,7 +227,6 @@ class ARS():
 		u = random.random()
 		
 		# Find the largest z such that sc(z) < u
-		#ipdb.set_trace()
 		i = np.nonzero(self.s/self.cu < u)[0][-1] 
 
 		# Figure out x from inverse cdf in relevant sector
@@ -240,7 +234,7 @@ class ARS():
 		np.exp(self.u[i]))) / self.hprime[i]
 
 		return [xt,i]
-
+"""
 	def plotHull(self):
 		'''
 		Plot the piecewise linear hull using matplotlib
@@ -250,14 +244,12 @@ class ARS():
 		ypoints = np.exp(self.u) 
 		plt.plot(xpoints,ypoints)
 		plt.show()
-		'''
 		for i in range(1,self.z.__len__()):
 			x1 = self.z[i]
 			y1 = 0
 			x2 = self.z[i+1]
 			y2 = self.z[i+1]-self.z[i] * hprime[i]
-		'''
-			
+"""
 class ars_sampler(object):
 	def __init__(self, Lambda, betas):
 		self.Lambda = Lambda
@@ -301,7 +293,6 @@ class ars_sampler(object):
 				ars = ARS(f, fprima, xi = [guess_low, (guess_low+guess_high)/2, guess_high], lb=0.01, ub=bnd)
 			except:
 				is_fail = 1
-				#ipdb.set_trace()
 				print('Lambda not drew.')
 		else:
 			# check which side needs to be relaxed
@@ -322,7 +313,6 @@ class ars_sampler(object):
 				ars = ARS(f, fprima, xi = [guess_low, (guess_low+guess_high)/2, guess_high], lb=0.01, ub=bnd)
 			else:
 				is_fail = 1
-				#ipdb.set_trace()
 				print('Lambda not drew.')
 
 		if not is_fail:
@@ -331,8 +321,6 @@ class ars_sampler(object):
 			samples = [min(self.Lambda,bnd-0.01)]
 
 		return samples
-		#plt.hist(samples, bins=100, normed=True)
-		#plt.show()
 	
 	def sample_beta(self,k,n=5):
 		def f(x):
@@ -366,7 +354,6 @@ class ars_sampler(object):
 				ars = ARS(f, fprima, xi = [guess_low, (guess_low+guess_high)/2, guess_high], lb=-1, ub=bnd)
 			except:
 				is_fail = 1
-				#ipdb.set_trace()
 				print('Beta not drew.')
 		else:		
 			is_legit = 0
@@ -389,7 +376,6 @@ class ars_sampler(object):
 				ars = ARS(f, fprima, xi = [guess_low, (guess_low+guess_high)/2, guess_high], lb=-1, ub=bnd)
 			else:
 				is_fail = 1
-				#ipdb.set_trace()
 				print('Beta not drew.')
 				
 		if not is_fail:
@@ -436,7 +422,6 @@ if __name__=='__main__':
 		s_cnt[t,x]+=1
 		h_cnt[t,x]+=d
 	hrates = h_cnt/s_cnt
-	ipdb.set_trace()
 			
 
 	X = np.array(X, dtype=np.int)
@@ -447,4 +432,3 @@ if __name__=='__main__':
 	#test_obj.sample_lambda()
 	#test_obj.sample_beta(1)
 	params = test_obj.mcmc()
-	ipdb.set_trace()

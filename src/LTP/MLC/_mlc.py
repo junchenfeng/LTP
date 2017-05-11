@@ -1,6 +1,5 @@
 import os,sys
 proj_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0,proj_dir)
 
 test_data_dir = os.path.dirname(proj_dir)
 single_component_data_path = test_data_dir + '/data/test/single_component_complete_track.txt'
@@ -8,8 +7,8 @@ double_component_data_path = test_data_dir + '/data/test/double_component_comple
 single_component_incom_data_path = test_data_dir + '/data/test/single_component_incomplete_track.txt'
 double_component_incom_data_path = test_data_dir + '/data/test/double_component_incomplete_track.txt'
 
-from solver.vanilla_MLC import RunVanillaMLC
-from solver.predict_performance import get_predict_performance
+from .solver.vanilla_MLC import RunVanillaMLC
+from .solver.predict_performance import get_predict_performance
 import numpy as np
 
 test_instance = RunVanillaMLC()

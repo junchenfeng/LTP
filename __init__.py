@@ -1,1 +1,0 @@
-from HMM.mcmc import LTP_HMM_MCMC

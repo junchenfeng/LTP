@@ -15,7 +15,10 @@ There are good reasons why the number of latent states or the number of observat
 
 The general LTP model, estimated with MCMC, allows for multi-item and multi-state HMM model. 
 
-The model imposes the "no-forgetting" constraints. P(X_t=m|X_{t-1}=n) = 0 if m<n 
+The model imposes the "no-forgetting" constraints. 
+```
+P(X_t=m|X_{t-1}=n) = 0 if m<n 
+```
 
 The default model set the number of state of latent mastery (Mx) to 2. The number of state of the observed response (My) depends on the input data.
 

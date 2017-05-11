@@ -6,17 +6,10 @@ from tqdm import tqdm
 import copy
 import math
 
-import os	  
-proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-import sys
-sys.path.append(proj_dir)
+from .util import draw_c, draw_l, get_map_estimation, get_final_chain, random_choice, draw_multilevel_pi, get_item_dict
+from .bfs_util import generate_states, update_state_parmeters
+from .hazard_util import prop_hazard, cell_hazard
 
-
-from HMM.util import draw_c, draw_l, get_map_estimation, get_final_chain, random_choice, draw_multilevel_pi, get_item_dict
-from HMM.bfs_util import generate_states, update_state_parmeters
-from HMM.hazard_util import prop_hazard, cell_hazard
-
-import ipdb	
 from joblib import Parallel, delayed
 
 class LTP_HMM_MCMC(object):
@@ -313,7 +306,6 @@ class LTP_HMM_MCMC(object):
 				param_chain['e'][iter,:] = self.effort_prob_matrix[:,:,1].flatten()
 			# update parameter chain here
 			self.X = X
-		#ipdb.set_trace()
 		return param_chain
 
 	def _get_initial_param(self, init_param, prior_dist, zero_mass_set, item_param_constraint, is_effort, is_exit, hazard_model, hazard_state):
@@ -473,7 +465,6 @@ class LTP_HMM_MCMC(object):
 			) for i in range(chain_num))
 			
 		# process
-		#ipdb.set_trace()
 		burn_in = min(300, int(max_iter/2))
 		self.param_chain = get_final_chain(param_chain_vec, burn_in, max_iter, is_exit, is_effort)	
 		res = get_map_estimation(self.param_chain,is_exit, is_effort)

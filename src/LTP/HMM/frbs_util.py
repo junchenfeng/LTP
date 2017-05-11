@@ -1,16 +1,4 @@
 # encoding: utf-8
-		for obs_key in self.obs_type_info.keys():
-			pi_vec = self.obs_type_info[obs_key]['pi']
-			P_mat = self.obs_type_info[obs_key]['P']
-			T = pi_vec.shape[0]
-			sample_p_vec = np.zeros((T,2))
-			for t in range(T-1,-1,-1):
-				if t == T-1:
-					sample_p_vec[t,1] = min(pi_vec[t,1],1.0)
-				else:
-					for x in range(0,2):
-						sample_p_vec[t,x] = min(P_mat[t,1,x]/P_mat[t,:,x].sum(), 1.0)
-			self.obs_type_info[obs_key]['sample_p'] = sample_p_vec
 def get_E(E,t,T):
 	if E == 0:
 		Et = 0
@@ -75,7 +63,6 @@ def __update_pi(self, t, E, V, observ, item_id, pi_vec, P_mat, is_effort=False):
 		
 def __update_P(self, t, E, item_id_l, V, observ, item_id_O, pi_vec, P_mat, is_effort=False):	
 
-	#ipdb.set_trace()
 	p_raw = np.zeros((3,3))
 	
 	if not E:

@@ -1,13 +1,9 @@
 import numpy as np
-import os, sys
 import gevent
 from gevent import monkey;gevent.monkey.patch_all();
 
-proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, proj_dir)
-
-from utl.IO import data_loader_from_file, data_loader_from_list
-from utl.utl import Z_assembly
+from ..utl.IO import data_loader_from_file, data_loader_from_list
+from ..utl.utl import Z_assembly
 
 class RunVanillaMLC(object):
     def init(self, K, max_t = 5):

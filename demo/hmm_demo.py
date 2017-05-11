@@ -1,12 +1,6 @@
 # encoding:utf-8
 import numpy as np
-import os
-proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-import sys
-sys.path.append(proj_dir)
-from HMM.mcmc import LTP_HMM_MCMC
-import matplotlib.pyplot as plt
-import ipdb
+from LTP import LTP_HMM_MCMC
 
 
 '''
