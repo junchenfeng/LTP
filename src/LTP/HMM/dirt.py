@@ -17,6 +17,9 @@ from .dirt_util import get_map_estimation, get_percentile_estimation
 class DIRT_MCMC(object):
 
     def _load_observ(self, data):
+        '''
+        THe input data needs to be sorted by learner id and t
+        '''
 
         self.K = len(set([x[0] for x in data])) # i
         self.T = max([x[1] for x in data]) + 1  # t
@@ -32,7 +35,7 @@ class DIRT_MCMC(object):
             if len(log)==4:
                 # The spell never ends; multiple item
                 i,t,j,y = log
-                is_h = 0; is_e = 1
+                is_e = 1
             elif len(log) == 5:
                 i,t,j,y,is_e = log
             else:
@@ -40,7 +43,7 @@ class DIRT_MCMC(object):
             self.O_array[t, i] = y
             self.J_array[t, i] = j
             self.E_array[t, i] = is_e
-            T_array[i] = t
+            T_array[i] = max(T_array[i],t) # in case the data are not properly sorted!
 
         # This section is used to collapse states
         self.T_vec = [int(x)+1 for x in T_array.tolist()] 
@@ -53,7 +56,9 @@ class DIRT_MCMC(object):
         self.E_data = []
         for i in range(self.K):
             self.E_data.append( [x for x in self.E_array[0:self.T_vec[i],i].tolist()] )         
+        
 
+        # check for integrity
 
     def _collapse_obser_state(self):
         self.obs_type_cnt = defaultdict(int)
@@ -140,41 +145,43 @@ class DIRT_MCMC(object):
             #############################
             # Step 2: Update Parameter  #
             #############################
-            try:  
-                # upate pi | Type 0 and 1 are low mastery, Type 2 are high mastery
-                pi_params  = [self.prior_param['pi'][x]+ np.sum(X[0,:]==x) for x in range(self.Mx)] 
-                new_state_init_dist = np.zeros((1,self.Mx))
-                new_state_init_dist = np.random.dirichlet(pi_params) 
-                    
-                # update c  
-                obs_cnt = np.zeros((self.unique_item_num, self.Mx, self.My)) # state,observ
+            #try:  
+            # upate pi | Type 0 and 1 are low mastery, Type 2 are high mastery
+            pi_params  = [self.prior_param['pi'][x]+ np.sum(X[0,:]==x) for x in range(self.Mx)] 
+            new_state_init_dist = np.zeros((1,self.Mx))
+            new_state_init_dist = np.random.dirichlet(pi_params) 
+                
+            # update c  
+            obs_cnt = np.zeros((self.unique_item_num, self.Mx, self.My)) # state,observ
+            for k in range(self.K):
+                for t in range(0, self.T_vec[k]):
+                    o_j = self.J_array[t,k]
+                    o_is_e = self.E_array[t,k]          
+                    if o_is_e:
+                        obs_cnt[self.item_param_dict[o_j], X[t,k], self.O_array[t,k]] += 1 
+            
+            new_observ_prob_matrix = np.zeros((self.J,self.Mx,self.My))
+            for item_id in range(self.unique_item_num):
+                c_params = [[self.prior_param['c'][x][y] + obs_cnt[item_id,x,y] for y in range(self.My)] for x in range(self.Mx)] 
+                c_draws = draw_c(c_params, self.Mx, self.My) 
+                new_observ_prob_matrix[item_id] = c_draws 
+            
+            # update e
+            if is_effort:
+                effort_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
+                effort_state_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
                 for k in range(self.K):
                     for t in range(0, self.T_vec[k]):
                         o_j = self.J_array[t,k]
-                        o_is_e = self.E_array[t,k]          
-                    if o_is_e:
-                        obs_cnt[self.item_param_dict[o_j], X[t,k], self.O_array[t,k]] += 1 
-                
-                new_observ_prob_matrix = np.zeros((self.J,self.Mx,self.My))
-                for j in range(self.unique_item_num):
-                    c_params = [[self.prior_param['c'][x][y] + obs_cnt[j,x,y] for y in range(self.My)] for x in range(self.Mx)] 
-                    c_draws = draw_c(c_params, self.Mx, self.My)
-                    new_observ_prob_matrix[j] = c_draws 
-                
-                # update e
-                if is_effort:
-                    effort_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
-                    effort_state_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
-                    for k in range(self.K):
-                        for t in range(0, self.T_vec[k]):
-                            o_j = self.J_array[t,k]
-                            o_is_e = self.E_array[t,k]              
-                            
-                            effort_cnt[o_j, X[t,k]] += o_is_e
-                            effort_state_cnt[o_j, X[t,k]] += 1  
-                    for j in range(self.J):
-                        self.effort_prob_matrix[j] = [np.random.dirichlet((self.prior_param['e'][0]+effort_state_cnt[j,x]-effort_cnt[j,x], self.prior_param['e'][1]+effort_cnt[j,x])) for x in range(self.Mx)]
+                        o_is_e = self.E_array[t,k]              
+                        
+                        effort_cnt[o_j, X[t,k]] += o_is_e
+                        effort_state_cnt[o_j, X[t,k]] += 1  
+                for j in range(self.J):
+                    self.effort_prob_matrix[j] = [np.random.dirichlet((self.prior_param['e'][0]+effort_state_cnt[j,x]-effort_cnt[j,x], self.prior_param['e'][1]+effort_cnt[j,x])) for x in range(self.Mx)]
+            '''
             except AttributeError as e:
+                import ipdb; ipdb.set_trace() # BREAKPOINT
                 tot_error_cnt += 1
                 print(e)
             except:
@@ -182,6 +189,7 @@ class DIRT_MCMC(object):
                 tot_error_cnt += 1
                 print(sys.exc_info()[0])
                 continue        
+            '''
             self.state_init_dist = new_state_init_dist
             self.observ_prob_matrix = new_observ_prob_matrix
 
@@ -208,7 +216,7 @@ class DIRT_MCMC(object):
         # c: probability of correct. Let cij=p(Y=j|X=i). 
         # pi: initial distribution of latent state, [Mx]
         # e: probability of effort, [Mx]*nJ
-            
+         
         # build the item dict
         self.unique_item_num, self.item_param_dict = get_item_dict(item_param_constraint, self.J)
 
@@ -261,23 +269,23 @@ class DIRT_MCMC(object):
                 prior_dist={}, init_param={}, 
                 Mx=None, num_mixture=1,
                 zero_mass_set={}, item_param_constraint=[], 
-                max_iter=1000, chain_num = 4, 
+                max_iter=1000, chain_num = 1, 
                 is_effort=False,
-                is_parallel=True):
+                is_parallel=False):
         # data = [i,j,y(,e)]  
         # i: learner id from 0:N-1
         # j: item id, from 0:J-1
         # y: response, 0 or 1
         # e(effort): 0 or 1
-
-        self.item_dict, data = data_etl(data_array) 
-
-        self._load_observ(data)
+        if item_param_constraint != []:
+            raise Exception('The item parameter constraint cannot be set at the moment')
         # My: the number of observation state. Assume that all items have the same My. Only 2 and 3 are accepted.
         # Me: number of effort state. Assume that all items have the same Me. Only 2 are accepted.
         # nJ: the number of items
         # K: the number of users
         # T: longest    
+        self.item_dict, data = data_etl(data_array) 
+        self._load_observ(data)
 
         # Mx: the number of latent state.
         # Mx = My, unless otherwise specified
@@ -292,12 +300,9 @@ class DIRT_MCMC(object):
         if not is_parallel:
             param_chain_vec = []
             for iChain in range(chain_num):
-                try:
-                    self._get_initial_param(init_param, prior_dist, zero_mass_set, item_param_constraint, is_effort)
-                    tmp_param_chain = self._MCMC(max_iter,  is_effort)
-                    param_chain_vec.append(tmp_param_chain)
-                except:
-                    continue
+                self._get_initial_param(init_param, prior_dist, zero_mass_set, item_param_constraint, is_effort)
+                tmp_param_chain = self._MCMC(max_iter,  is_effort)
+                param_chain_vec.append(tmp_param_chain)
         else:
             param_chain_vec = Parallel(n_jobs=chain_num)(delayed(self._work)(
                 max_iter,  is_effort, init_param, prior_dist, zero_mass_set, item_param_constraint
@@ -310,10 +315,12 @@ class DIRT_MCMC(object):
     def get_item_param(self):
         if self.My != 2:
             raise Exception('Parameter not supported')
+        
+        
         # point estimation
-        point_est = get_map_estimation(self.param_chain,'c').reshape(self.unique_item_num, self.Mx*(self.My-1))
-        ci_low = get_percentile_estimation(self.param_chain,'c', 10).reshape(self.unique_item_num, self.Mx*(self.My-1))
-        ci_high = get_percentile_estimation(self.param_chain,'c', 90).reshape(self.unique_item_num, self.Mx*(self.My-1))
+        point_est = get_map_estimation(self.param_chain,'c').reshape(self.J, self.Mx*(self.My-1))
+        ci_low = get_percentile_estimation(self.param_chain,'c', 10).reshape(self.J, self.Mx*(self.My-1))
+        ci_high = get_percentile_estimation(self.param_chain,'c', 90).reshape(self.J, self.Mx*(self.My-1))
 
         
         param = {}

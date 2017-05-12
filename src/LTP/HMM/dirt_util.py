@@ -101,7 +101,7 @@ def data_etl(data_array):
 
     user_reverse_dict = {}
     item_reverse_dict = {}
-    #user_dict = {}
+    user_log_cnt = defaultdict(int)
     item_dict = {}
     user_counter = 0 # start from 0
     item_counter = 0 # start from 0
@@ -129,18 +129,22 @@ def data_etl(data_array):
         user_id_val = user_reverse_dict[user_id]
         item_id_val = item_reverse_dict[item_id]
         log_key = str(user_id_val)+'#'+str(item_id_val)
-        t = len(tmp_dict[log_key])
+
+        t = user_log_cnt[user_id_val] 
         if log_type == 3:
             tmp_dict[log_key].append((user_id_val, t, item_id_val, res))
         elif log_type == 4:
             tmp_dict[log_key].append((user_id_val, t, item_id_val, res, effort))
 
+        user_log_cnt[user_id_val] += 1
     # output
     data = []
     for logs in tmp_dict.values():
         data += logs
+    
+    sorted_data = sorted(data, key=lambda k:(k[0],k[1])) # resort by uid and t
 
-    return item_dict, data
+    return item_dict, sorted_data
 
 def get_final_chain(param_chain_vec, start, end, is_effort):
 	# calcualte the llk for the parameters
