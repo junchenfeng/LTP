@@ -10,7 +10,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 
 from .util import draw_c,  random_choice, get_item_dict
-from .dirt_util import data_etl
+from .dirt_util import filter_invalid_items, data_etl
 from .dirt_util import update_state_parmeters, generate_states, get_final_chain
 from .dirt_util import get_map_estimation, get_percentile_estimation
 
@@ -85,7 +85,8 @@ class DIRT_MCMC(object):
             O_s, J_s, E_s = key.split('-')
             self.obs_type_info[key] = {'O':[int(x) for x in O_s.split('|')], 'J':[int(x) for x in J_s.split('|')], 'E':[int(x) for x in E_s.split('|')]}
         
-    def _MCMC(self, max_iter, is_effort=False):
+
+    def _MCMC(self, max_iter, is_effort=False, is_robust=False):
         # initialize for iteration
         if not is_effort and self.effort_prob_matrix[:,:,0].sum() != 0: 
             raise Exception('Effort rates are not set to 1 while disabled the update in effort parameter.')
@@ -130,7 +131,7 @@ class DIRT_MCMC(object):
                     self.observ_prob_matrix, 
                     self.state_init_dist, self.effort_prob_matrix,
                         is_effort)
-                
+                        
                 self.obs_type_info[key]['llk_vec'] = llk_vec
                 self.obs_type_info[key]['pi'] = pis
                 
@@ -163,7 +164,15 @@ class DIRT_MCMC(object):
             new_observ_prob_matrix = np.zeros((self.J,self.Mx,self.My))
             for item_id in range(self.unique_item_num):
                 c_params = [[self.prior_param['c'][x][y] + obs_cnt[item_id,x,y] for y in range(self.My)] for x in range(self.Mx)] 
-                c_draws = draw_c(c_params, self.Mx, self.My) 
+                try:
+                    c_draws = draw_c(c_params, self.Mx, self.My) 
+                except Exception as Err:
+                    if is_robust:
+                        #TODO: Find a better solution than assign the old value
+                        new_observ_prob_matrix[item_id] = self.observ_prob_matrix[item_id]
+                        continue
+                    else:
+                        raise Err
                 new_observ_prob_matrix[item_id] = c_draws 
             
             # update e
@@ -181,7 +190,6 @@ class DIRT_MCMC(object):
                     self.effort_prob_matrix[j] = [np.random.dirichlet((self.prior_param['e'][0]+effort_state_cnt[j,x]-effort_cnt[j,x], self.prior_param['e'][1]+effort_cnt[j,x])) for x in range(self.Mx)]
             '''
             except AttributeError as e:
-                import ipdb; ipdb.set_trace() # BREAKPOINT
                 tot_error_cnt += 1
                 print(e)
             except:
@@ -227,7 +235,7 @@ class DIRT_MCMC(object):
             self.prior_param = {
                     'e': [1, 1],
                     'pi':pi_prior,
-                    'c' :[[y+1 for y in range(self.My)] for x in range(self.Mx)]
+                    'c' :[[self.My-y for y in range(self.My)] for x in range(self.Mx)]
                     }
         else:
             self.prior_param = prior_dist
@@ -260,9 +268,9 @@ class DIRT_MCMC(object):
                 self.effort_prob_matrix = np.zeros((self.J, self.Mx, 2))
                 self.effort_prob_matrix[:,:,1] = 1.0
 
-    def _work(self,max_iter,  is_effort, init_param, prior_dist, zero_mass_set, item_param_constraint):
+    def _work(self,max_iter,  is_effort, is_robust, init_param, prior_dist, zero_mass_set, item_param_constraint):
         self._get_initial_param(init_param, prior_dist, zero_mass_set, item_param_constraint, is_effort)
-        param_chain = self._MCMC(max_iter,  is_effort)
+        param_chain = self._MCMC(max_iter,  is_effort, is_robust)
         return param_chain
 
     def estimate(self, data_array, 
@@ -271,7 +279,8 @@ class DIRT_MCMC(object):
                 zero_mass_set={}, item_param_constraint=[], 
                 max_iter=1000, chain_num = 1, 
                 is_effort=False,
-                is_parallel=False):
+                is_parallel=False,
+                is_robust=False):
         # data = [i,j,y(,e)]  
         # i: learner id from 0:N-1
         # j: item id, from 0:J-1
@@ -279,20 +288,33 @@ class DIRT_MCMC(object):
         # e(effort): 0 or 1
         if item_param_constraint != []:
             raise Exception('The item parameter constraint cannot be set at the moment')
-        # My: the number of observation state. Assume that all items have the same My. Only 2 and 3 are accepted.
+        # TODO: Allow for different My for different items
+        # My: the number of observation state. Assume that all items have the same My. 
         # Me: number of effort state. Assume that all items have the same Me. Only 2 are accepted.
         # nJ: the number of items
         # K: the number of users
         # T: longest    
-        self.item_dict, data = data_etl(data_array) 
+        
+        invalid_items = filter_invalid_items(data_array)
+        if invalid_items != []:
+            if is_robust:
+                self.item_dict, data = data_etl(data_array, invalid_item_ids=invalid_items) 
+            else:
+                raise Exception('Invalid items are :\n'+'\n'.join(invalid_items)) 
+        else:
+            self.item_dict, data = data_etl(data_array) 
+            
         self._load_observ(data)
-
+        
         # Mx: the number of latent state.
         # Mx = My, unless otherwise specified
         if not Mx:
             self.Mx=self.My
         else:
             self.Mx=Mx
+        
+        if self.My < 2:
+            raise Exception('The states of response is singular.')
 
         self._collapse_obser_state()
 
@@ -301,11 +323,11 @@ class DIRT_MCMC(object):
             param_chain_vec = []
             for iChain in range(chain_num):
                 self._get_initial_param(init_param, prior_dist, zero_mass_set, item_param_constraint, is_effort)
-                tmp_param_chain = self._MCMC(max_iter,  is_effort)
+                tmp_param_chain = self._MCMC(max_iter,  is_effort, is_robust)
                 param_chain_vec.append(tmp_param_chain)
         else:
             param_chain_vec = Parallel(n_jobs=chain_num)(delayed(self._work)(
-                max_iter,  is_effort, init_param, prior_dist, zero_mass_set, item_param_constraint
+                max_iter,  is_effort, is_robust, init_param, prior_dist, zero_mass_set, item_param_constraint
             ) for i in range(chain_num))
         
         # update obj

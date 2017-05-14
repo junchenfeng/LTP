@@ -5,6 +5,7 @@ dist/*
 *.ipynb
 */.ipynb_checkpoints/*
 *.pyc
+*/debug.py
 data/hidden/*
 data/17data/*
 data/17zuoye/*

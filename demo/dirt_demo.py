@@ -24,13 +24,7 @@ for i in range(N):
         data.append(('stu_%d'%i, 'item_%d'%j, y))
 
 # estimate
-#from LTP import DIRT_MCMC
-import sys, os
-proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-pkg_dir = proj_dir + '/src/LTP'
-sys.path.insert(0, pkg_dir)
-
-from HMM.dirt import DIRT_MCMC
+from LTP import DIRT_MCMC
 
 mcmc_instance = DIRT_MCMC()
 mcmc_instance.estimate(data, max_iter=1000)

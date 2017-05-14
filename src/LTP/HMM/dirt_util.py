@@ -89,7 +89,7 @@ def update_state_parmeters(X_mat, Mx,
 
 
 
-def data_etl(data_array):
+def data_etl(data_array, invalid_item_ids = []):
     '''
     input: [i,j,y(,e)]
 
@@ -111,32 +111,35 @@ def data_etl(data_array):
     log_type = len(data_array[0])
     for log in data_array:
         if log_type == 3:
-            user_id, item_id, res = log
+            learner_id, item_id, res = log
         elif log_type == 4:
-            user_id, item_id, res, effort = log
+            learner_id, item_id, res, effort = log
         else:
             raise Exception('The log format is not recognized.')
-       
-        if user_id not in user_reverse_dict:
-            user_reverse_dict[user_id] = user_counter
-            #user_dict[user_counter] = user_id
+        
+        if item_id in invalid_item_ids:
+            continue
+
+        if learner_id not in user_reverse_dict:
+            user_reverse_dict[learner_id] = user_counter
+            #user_dict[user_counter] = learner_id
             user_counter += 1
         if item_id not in item_reverse_dict:
             item_reverse_dict[item_id] = item_counter
             item_dict[item_counter] = item_id
             item_counter += 1
 
-        user_id_val = user_reverse_dict[user_id]
+        learner_id_val = user_reverse_dict[learner_id]
         item_id_val = item_reverse_dict[item_id]
-        log_key = str(user_id_val)+'#'+str(item_id_val)
+        log_key = str(learner_id_val)+'#'+str(item_id_val)
 
-        t = user_log_cnt[user_id_val] 
+        t = user_log_cnt[learner_id_val] 
         if log_type == 3:
-            tmp_dict[log_key].append((user_id_val, t, item_id_val, res))
+            tmp_dict[log_key].append((learner_id_val, t, item_id_val, res))
         elif log_type == 4:
-            tmp_dict[log_key].append((user_id_val, t, item_id_val, res, effort))
+            tmp_dict[log_key].append((learner_id_val, t, item_id_val, res, effort))
 
-        user_log_cnt[user_id_val] += 1
+        user_log_cnt[learner_id_val] += 1
     # output
     data = []
     for logs in tmp_dict.values():
@@ -145,6 +148,34 @@ def data_etl(data_array):
     sorted_data = sorted(data, key=lambda k:(k[0],k[1])) # resort by uid and t
 
     return item_dict, sorted_data
+
+def filter_invalid_items(data_array):
+    # check if any of the item has pure right or pure wrong
+    item_all_cnt = defaultdict(int)
+    item_right_cnt = defaultdict(int)
+   
+    # process
+    log_type = len(data_array[0])
+    for log in data_array:
+        if log_type == 3:
+            learner_id, item_id, res = log
+        elif log_type == 4:
+            learner_id, item_id, res, effort = log
+        else:
+            raise Exception('The log format is not recognized.')
+        
+        item_all_cnt[item_id] += 1
+        #TODO: allow for non-binary check
+        item_right_cnt[item_id] += res
+    
+    # filter
+    invalid_items = []
+    for item_id, all_cnt in item_all_cnt.items():
+        accuracy = item_right_cnt[item_id]/all_cnt
+        if accuracy <= 0.01 or accuracy >= 0.99:
+            invalid_items.append(item_id)
+
+    return invalid_items
 
 def get_final_chain(param_chain_vec, start, end, is_effort):
 	# calcualte the llk for the parameters
