@@ -201,9 +201,91 @@ def get_map_estimation(param_chain, field_name):
 def get_percentile_estimation(param_chain, field_name, pct):
     return np.percentile(param_chain[field_name], pct ,axis=0)
         
+def encode_log2state(logs):
+    """
+    输入：[(j,y,e)]
+    事实上t无用
+
+    输出:J|Y0E0|Y0E1|Y1E1
+    """ 
+    Y1E1s = []; Y0E1s = []; Y0E0s = []
+    log_dict = {} 
+    for log in logs:
+        j = str(log[0])
+        y = int(log[1])
+        e = int(log[2])
+        if j not in log_dict:
+            log_dict[j] = defaultdict(int)
+        log_dict[j][2**y+e] += 1    # 默认Y1E0不存在
     
+    sorted_Js = sorted(log_dict.keys())
+    for j in sorted_Js:
+        Y0E0s.append(str(log_dict[j][1]))
+        Y0E1s.append(str(log_dict[j][2]))
+        Y1E1s.append(str(log_dict[j][3]))
+   
+    state_id = ','.join(sorted_Js) + '|' + ','.join(Y0E0s) + '|' + ','.join(Y0E1s) + '|' + ','.join(Y1E1s)
+    return state_id 
+
+def decode_state2log(state_id):
+    """
+    输入：J|Y0E0|Y0E1|Y1E1
+    输出：[(j,y,e,n)]
+    """
+    def decode(strs):
+        return [int(s) for s in strs.split(',') ]
+    logs = []
+    Js, Y0E0s, Y0E1s, Y1E1s = state_id.split('|')
+    js = Js.split(','); y0e0s = decode(Y0E0s); y0e1s = decode(Y0E1s); y1e1s = decode(Y1E1s)
+    for i in range(len(js)):
+        j = int(js[i])
+        if y0e0s[i]:
+            logs.append((j, 0, 0, y0e0s[i]))
+        if y0e1s[i]:
+            logs.append((j, 0, 1, y0e1s[i]))
+        if y1e1s[i]:
+            logs.append((j, 1, 1, y1e1s[i]))
+
+    return logs
+
+def collapse_obser_state(learner_logs):
     
+    obs_type_cnt = defaultdict(int)
+    obs_type_ref = {}
+    
+    for k, logs in learner_logs.iteritem():
+        obs_type_key = encode_log2state(logs)
+        obs_type_cnt[obs_type_key] += 1
+        obs_type_ref[k] = obs_type_key
+
+    # construct the space
+    obs_type_info = {}
+    for key in obs_type_cnt.keys():
+        obs_type_info[key] = {'data':decode_state2log(key)} # cache it to speed up. Avoid repetition in later sampling
+    
+    return obs_type_cnt, obs_type_ref, obs_type_info
+
 if __name__ == '__main__':
+    
+    logs = [(1,1,1),
+            (1,0,1),
+            (1,0,0)]
+    state_id = encode_log2state(logs)
+    print(state_id)
+    print('1|1|1|1')
+    print(decode_state2log(state_id))
+    print([(1,0,0,1),(1,0,1,1),(1,1,1,1)])
+
+    logs = [(2,1,1),
+            (1,0,1),
+            (3,0,0)]
+    
+    state_id = encode_log2state(logs)
+    print(state_id,)
+    print('1,2,3|0,0,1|1,0,0|0,1,0')
+    print(decode_state2log(state_id))
+    print([(1,0,1,1),(2,1,1,1),(3,0,0,1)])
+    """
     # unit test state generating
     X_mat = generate_states(2,2)
     print(X_mat)
@@ -222,3 +304,4 @@ if __name__ == '__main__':
     llk_vec =  get_llk_all_states(X_mat, O, E, J, item_ids, observ_prob_matrix, state_init_dist, effort_prob_matrix,False)
     print(llk_vec) 
     print(0.6*0.8*0.2, 0.4*0.1*0.9) 
+    """

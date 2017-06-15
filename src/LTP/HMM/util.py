@@ -4,7 +4,7 @@
 import numpy as np
 import random
 from itertools import accumulate
-
+from collections import defaultdict
 def random_choice(p_vec):
 	cump=list(accumulate(p_vec))
 	n = len(p_vec)
@@ -204,7 +204,24 @@ def get_item_dict(item_param_constraint, J):
 	unique_item_num = item_id+1
 	item_param_dict = item_param_dict
 	return unique_item_num, item_param_dict
-	
+
+
+def collapse_obser_state(learner_logs):
+    
+    obs_type_cnt = defaultdict(int)
+    obs_type_ref = {}
+    
+    for k, logs in learner_logs.iteritem():
+        obs_type_key = encode_log2state(logs)
+        obs_type_cnt[obs_type_key] += 1
+        obs_type_ref[k] = obs_type_key
+
+    # construct the space
+    obs_type_info = {}
+    for key in obs_type_cnt.keys():
+        obs_type_info[key] = {'data':decode_state2log(key)} # cache it to speed up. Avoid repetition in later sampling
+    
+    return obs_type_cnt, obs_type_ref, obs_type_info
 	
 	
 if __name__ == '__main__':

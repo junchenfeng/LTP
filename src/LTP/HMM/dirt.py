@@ -1,5 +1,4 @@
 # encoding: utf-8
-
 from collections import defaultdict
 import copy
 import math
@@ -13,77 +12,29 @@ from .util import draw_c,  random_choice, get_item_dict
 from .dirt_util import filter_invalid_items, data_etl
 from .dirt_util import update_state_parmeters, generate_states, get_final_chain
 from .dirt_util import get_map_estimation, get_percentile_estimation
+from .dirt_util import collapse_obser_state
 
 class DIRT_MCMC(object):
 
     def _load_observ(self, data):
-        '''
-        THe input data needs to be sorted by learner id and t
-        '''
 
         self.K = len(set([x[0] for x in data])) # i
-        self.T = max([x[1] for x in data]) + 1  # t
-        self.J = len(set([x[2] for x in data])) # j
-        self.My = len(set(x[3] for x in data))  # y
-
-        self.E_array = np.empty((self.T, self.K), dtype=np.int)
-        self.O_array = np.empty((self.T, self.K), dtype=np.int)
-        self.J_array = np.empty((self.T, self.K), dtype=np.int)
-        T_array = np.zeros((self.K,))
-
+        self.J = len(set([x[1] for x in data])) # j
+         
+        # group by learner id
+        learner_logs = defaultdict(list())
         for log in data:
-            if len(log)==4:
+            if len(log)==3:
                 # The spell never ends; multiple item
-                i,t,j,y = log
+                i,j,y = log
                 is_e = 1
-            elif len(log) == 5:
-                i,t,j,y,is_e = log
+            elif len(log) == 4:
+                i,j,y,is_e = log
             else:
                 raise Exception('The log format is not recognized.')
-            self.O_array[t, i] = y
-            self.J_array[t, i] = j
-            self.E_array[t, i] = is_e
-            T_array[i] = max(T_array[i],t) # in case the data are not properly sorted!
+            learner_logs[i].append((j,y,is_e)) 
 
-        # This section is used to collapse states
-        self.T_vec = [int(x)+1 for x in T_array.tolist()] 
-        self.O_data = []
-        for i in range(self.K):
-            self.O_data.append( [x for x in self.O_array[0:self.T_vec[i],i].tolist()] )
-        self.J_data = []
-        for i in range(self.K):
-            self.J_data.append( [x for x in self.J_array[0:self.T_vec[i],i].tolist()] )   
-        self.E_data = []
-        for i in range(self.K):
-            self.E_data.append( [x for x in self.E_array[0:self.T_vec[i],i].tolist()] )         
-        
-
-        # check for integrity
-
-    def _collapse_obser_state(self):
-        self.obs_type_cnt = defaultdict(int)
-        self.obs_type_ref = {}
-        
-        '''
-        ORDER NO LONGER MATTERS!
-        Sort everything by item ids
-        Do not allow for multiple records of the same learner/item
-        '''
-        for k in range(self.K):
-            item_id_list = self.J_data[k]
-            num_item = len(item_id_list) 
-            if num_item != len(set(item_id_list)):
-                raise Exception('Duplicated log found in data. Each learner/item pair can have only 1 record!')
-            item_sort_idx = sorted(range(num_item), key=lambda j:item_id_list[j]) 
-            obs_type_key ='|'.join(str(self.O_data[k][idx]) for idx in item_sort_idx) + '-' + '|'.join(str(item_id_list[idx]) for idx in item_sort_idx) + '-' + '|'.join(str(self.E_data[k][idx]) for idx in item_sort_idx)
-            self.obs_type_cnt[obs_type_key] += 1
-            self.obs_type_ref[k] = obs_type_key
-
-        # construct the space
-        self.obs_type_info = {}
-        for key in self.obs_type_cnt.keys():
-            O_s, J_s, E_s = key.split('-')
-            self.obs_type_info[key] = {'O':[int(x) for x in O_s.split('|')], 'J':[int(x) for x in J_s.split('|')], 'E':[int(x) for x in E_s.split('|')]}
+        self.obs_type_cnt, self.observ_type_ref, self.obs_type_info = self.collapse_obser_state(learner_logs)
         
 
     def _MCMC(self, max_iter, is_effort=False, is_robust=False):
@@ -115,6 +66,7 @@ class DIRT_MCMC(object):
             #############################
             for key in self.obs_type_info.keys():
                 # get the obseration state
+                #TODO: API has been changed!
                 O = self.obs_type_info[key]['O']
                 J = self.obs_type_info[key]['J']
                 E = self.obs_type_info[key]['E']
@@ -156,6 +108,7 @@ class DIRT_MCMC(object):
             obs_cnt = np.zeros((self.unique_item_num, self.Mx, self.My)) # state,observ
             for k in range(self.K):
                 for t in range(0, self.T_vec[k]):
+                    #TODO: API has changed!
                     o_j = self.J_array[t,k]
                     o_is_e = self.E_array[t,k]          
                     if o_is_e:
@@ -181,6 +134,7 @@ class DIRT_MCMC(object):
                 effort_state_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
                 for k in range(self.K):
                     for t in range(0, self.T_vec[k]):
+                        # API has changed!
                         o_j = self.J_array[t,k]
                         o_is_e = self.E_array[t,k]              
                         
@@ -304,19 +258,17 @@ class DIRT_MCMC(object):
         else:
             self.item_dict, data = data_etl(data_array) 
             
-        self._load_observ(data)
-        
         # Mx: the number of latent state.
         # Mx = My, unless otherwise specified
+        self.My = len(set(x[2] for x in data))  # y
         if not Mx:
             self.Mx=self.My
         else:
             self.Mx=Mx
-        
         if self.My < 2:
             raise Exception('The states of response is singular.')
-
-        self._collapse_obser_state()
+        
+        self._load_observ(data)        
 
         # run MCMC
         if not is_parallel:
