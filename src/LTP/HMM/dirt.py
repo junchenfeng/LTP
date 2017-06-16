@@ -12,7 +12,7 @@ from .util import draw_c,  random_choice, get_item_dict
 from .dirt_util import filter_invalid_items, data_etl
 from .dirt_util import update_state_parmeters, generate_states, get_final_chain
 from .dirt_util import get_map_estimation, get_percentile_estimation
-from .dirt_util import collapse_obser_state
+from .dirt_util import collapse_obser_state, cache_state_info
 
 class DIRT_MCMC(object):
 
@@ -22,7 +22,7 @@ class DIRT_MCMC(object):
         self.J = len(set([x[1] for x in data])) # j
          
         # group by learner id
-        learner_logs = defaultdict(list())
+        learner_logs = defaultdict(list)
         for log in data:
             if len(log)==3:
                 # The spell never ends; multiple item
@@ -33,9 +33,8 @@ class DIRT_MCMC(object):
             else:
                 raise Exception('The log format is not recognized.')
             learner_logs[i].append((j,y,is_e)) 
-
-        self.obs_type_cnt, self.observ_type_ref, self.obs_type_info = self.collapse_obser_state(learner_logs)
-        
+        self.obs_state_cnt, self.obs_state_ref = collapse_obser_state(learner_logs)
+        self.obs_state_info = cache_state_info(self.obs_state_cnt.keys()) 
 
     def _MCMC(self, max_iter, is_effort=False, is_robust=False):
         # initialize for iteration
@@ -52,9 +51,7 @@ class DIRT_MCMC(object):
             param_chain['e'] = np.zeros((max_iter, self.Mx*self.J))
 
         # cache the generated states
-        X_mat_dict = {}
-        for t in range(1,self.T+1):
-            X_mat_dict[t] = generate_states(t, self.Mx)
+        X_mat = generate_states(self.Mx)
 
         tot_error_cnt = 0
         for iter in tqdm(range(max_iter)):
@@ -64,36 +61,30 @@ class DIRT_MCMC(object):
             #############################
             # Step 1: Data Augmentation #
             #############################
-            for key in self.obs_type_info.keys():
-                # get the obseration state
-                #TODO: API has been changed!
-                O = self.obs_type_info[key]['O']
-                J = self.obs_type_info[key]['J']
-                E = self.obs_type_info[key]['E']
-                # translate the J to item id
-                item_ids = [self.item_param_dict[j] for j in J]
-                Ts = len(O) 
-                X_mat = X_mat_dict[Ts]
-                
+            for obs_key in self.obs_state_info.keys():
+                # get the state logs 
+                data_logs = self.obs_state_info[obs_key]['data']
+                item_ids =  self.obs_state_info[obs_key]['item_ids']
+                 
                 llk_vec={}
                 pis={}
-                llk_vec, pis = update_state_parmeters(X_mat, self.Mx,
-                    O,E,
-                    J, item_ids,
-                    self.observ_prob_matrix, 
+                #TODO: add in item id restriction
+                llk_vec, pis = update_state_parmeters(X_mat, data_logs,
+                        self.observ_prob_matrix, 
                     self.state_init_dist, self.effort_prob_matrix,
                         is_effort)
                         
-                self.obs_type_info[key]['llk_vec'] = llk_vec
-                self.obs_type_info[key]['pi'] = pis
+                self.obs_state_info[obs_key]['llk_vec'] = llk_vec    # use for debug
+                self.obs_state_info[obs_key]['pi'] = pis
                 
             # sample states backwards 
-            X = np.zeros((self.T, self.K),dtype=np.int)
-            for i in range(self.K):
-                obs_key = self.obs_type_ref[i]
-                # sample the state
-                pi = self.obs_type_info[obs_key]['pi']
-                X[:, i] = random_choice(pi)
+            X = np.zeros((1, self.K),dtype=np.int)
+            
+            for obs_key in self.obs_state_info.keys():
+                pi = self.obs_state_info[obs_key]['pi']
+                learner_ids = self.obs_state_ref[obs_key]
+                for i in learner_ids: 
+                    X[0, i] = random_choice(pi)
             
             #############################
             # Step 2: Update Parameter  #
@@ -104,15 +95,22 @@ class DIRT_MCMC(object):
             new_state_init_dist = np.zeros((1,self.Mx))
             new_state_init_dist = np.random.dirichlet(pi_params) 
                 
-            # update c  
+            # update c 
             obs_cnt = np.zeros((self.unique_item_num, self.Mx, self.My)) # state,observ
-            for k in range(self.K):
-                for t in range(0, self.T_vec[k]):
-                    #TODO: API has changed!
-                    o_j = self.J_array[t,k]
-                    o_is_e = self.E_array[t,k]          
-                    if o_is_e:
-                        obs_cnt[self.item_param_dict[o_j], X[t,k], self.O_array[t,k]] += 1 
+            if is_effort:
+                effort_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
+                effort_state_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
+
+            for obs_key in self.obs_state_info.keys():
+                learner_ids = self.obs_state_ref[obs_key]
+                data_logs = self.obs_state_info[obs_key]['data']
+                for log in data_logs:
+                    j, y, e, n = log
+                    for k in learner_ids:
+                        obs_cnt[self.item_param_dict[j], X[0,k], y] += e*n  # only valid effort count! 
+                        if is_effort:
+                            effort_cnt[j, X[0,k]] += e*n
+                            effort_state_cnt[j, X[0,k]] += n  
             
             new_observ_prob_matrix = np.zeros((self.J,self.Mx,self.My))
             for item_id in range(self.unique_item_num):
@@ -130,16 +128,6 @@ class DIRT_MCMC(object):
             
             # update e
             if is_effort:
-                effort_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
-                effort_state_cnt = np.zeros((self.J,self.Mx),dtype=np.int)
-                for k in range(self.K):
-                    for t in range(0, self.T_vec[k]):
-                        # API has changed!
-                        o_j = self.J_array[t,k]
-                        o_is_e = self.E_array[t,k]              
-                        
-                        effort_cnt[o_j, X[t,k]] += o_is_e
-                        effort_state_cnt[o_j, X[t,k]] += 1  
                 for j in range(self.J):
                     self.effort_prob_matrix[j] = [np.random.dirichlet((self.prior_param['e'][0]+effort_state_cnt[j,x]-effort_cnt[j,x], self.prior_param['e'][1]+effort_cnt[j,x])) for x in range(self.Mx)]
             '''
@@ -163,7 +151,6 @@ class DIRT_MCMC(object):
             pi_vec = self.state_init_dist[0:-1].tolist() 
             param_chain['pi'][iter,:] = pi_vec
             param_chain['c'][iter,:] = self.observ_prob_matrix[:,:,1:].reshape(self.unique_item_num*self.Mx*(self.My-1)).tolist()
-
 
             if is_effort:
                 param_chain['e'][iter,:] = self.effort_prob_matrix[:,:,1].flatten()
