@@ -12,7 +12,7 @@ data/17zuoye/*
 data
 sandbox
 thesiswork
-
+src/LTP/sandbox
 ## Core latex/pdflatex auxiliary files:
 *.aux
 *.lof
