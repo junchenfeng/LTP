@@ -3,6 +3,7 @@ from collections import defaultdict
 import copy
 import math
 
+import random
 import sys
 import numpy as np
 from joblib import Parallel, delayed
@@ -20,7 +21,7 @@ class DIRT_MCMC(object):
 
         self.K = len(set([x[0] for x in data])) # i
         self.J = len(set([x[1] for x in data])) # j
-         
+        
         # group by learner id
         learner_logs = defaultdict(list)
         for log in data:
@@ -73,18 +74,19 @@ class DIRT_MCMC(object):
                         self.observ_prob_matrix, 
                     self.state_init_dist, self.effort_prob_matrix,
                         is_effort)
-                        
+                #import ipdb;ipdb.set_trace()
                 self.obs_state_info[obs_key]['llk_vec'] = llk_vec    # use for debug
                 self.obs_state_info[obs_key]['pi'] = pis
                 
             # sample states backwards 
             X = np.zeros((1, self.K),dtype=np.int)
-            
+            #import ipdb;ipdb.set_trace()
             for obs_key in self.obs_state_info.keys():
                 pi = self.obs_state_info[obs_key]['pi']
                 learner_ids = self.obs_state_ref[obs_key]
+                #TODO: Generalize
                 for i in learner_ids: 
-                    X[0, i] = random_choice(pi)
+                    X[0, i] = 1 if random.random()>=pi[0] else 0
             
             #############################
             # Step 2: Update Parameter  #

@@ -7,7 +7,7 @@ from collections import defaultdict
 
 def logsum(log_prob_list, is_exact=False):
     if is_exact:
-        return sum([math.exp(x) for x in log_prob_list])
+        return math.log(sum([math.exp(x) for x in log_prob_list]))
     else:
         xmax = max(log_prob_list)
         return xmax + math.log(sum([math.exp(x-xmax) for x in log_prob_list]))
@@ -22,7 +22,7 @@ def generate_states(max_level):
     return states
     
 
-def likelihood(X,Y,E,observ_prob_matrix, state_init_dist, effort_prob_matrix, is_effort):
+def likelihood(X,Y,E,observ_prob_matrix, effort_prob_matrix, is_effort):
     # TODO: pass in param structure rather than individual elements. Not flexible!
     """
     X: int
@@ -42,9 +42,7 @@ def likelihood(X,Y,E,observ_prob_matrix, state_init_dist, effort_prob_matrix, is
             po = observ_prob_matrix[X,Y]
     else:
         po = observ_prob_matrix[X,Y]
-
-    px = state_init_dist[X]     
-    lk = po*px*pe
+    lk = po*pe
     
     if lk<0:
         raise ValueError('Negative likelihood.')
@@ -57,12 +55,13 @@ def data_likelihood(X_val, data_logs, observ_prob_matrix, state_init_dist, effor
     # X:  Latent state
     # datalogs: [(j,y,e,n)]
     """
-    llk = 0
+    llk = math.log(state_init_dist[X_val])
     for log in data_logs:
-        j,y,e,n = log
-        llk += n*math.log(likelihood(X_val, y,e,observ_prob_matrix[j], state_init_dist, effort_prob_matrix[j], is_effort))
+        j, y, e, n = log
+        prob = likelihood(X_val, y,e,observ_prob_matrix[j], effort_prob_matrix[j], is_effort)
+        llk += math.log(prob)
     
-    return llk 
+    return n*llk 
     
 
 def get_llk_all_states(X_mat, data_logs, 
@@ -82,17 +81,18 @@ def get_llk_all_states(X_mat, data_logs,
 
 def update_state_parmeters(X_mat,data_logs,
                            observ_prob_matrix, state_init_dist, effort_prob_matrix,
-                           is_effort):
+                           is_effort, is_exact=False):
     """
     从数据中获得后验概率
     X_mat = Mx*1 array
     """
     #calculate the exhaustive state probablity
     llk_vec = get_llk_all_states(X_mat, data_logs, observ_prob_matrix, state_init_dist, effort_prob_matrix, is_effort)
-    tot_llk = logsum(llk_vec)
-    
-    if math.exp(tot_llk)<1e-40:
-        raise ValueError('All likelihood are 0.')
+    tot_llk = logsum(llk_vec, is_exact)
+    #import ipdb;ipdb.set_trace()
+    #if math.exp(tot_llk)<1e-40:
+    #    import ipdb;ipdb.set_trace()
+    #    raise ValueError('All likelihood are 0.')
     
     # pi
     Mx = X_mat.shape[0]
@@ -110,12 +110,11 @@ def data_etl(data_array, invalid_item_ids = []):
     output: 
     (1) user_dict: map input user id to consecutive int
     (2) item_dict: map input item id to consecutive int
-    (3) data: [i,t,j,y(,e)] Add a t to indicate sequence length
+    (3) data: [i,j,y(,e)] Add a t to indicate sequence length
     '''
 
     user_reverse_dict = {}
     item_reverse_dict = {}
-    user_log_cnt = defaultdict(int)
     item_dict = {}
     user_counter = 0 # start from 0
     item_counter = 0 # start from 0
@@ -147,13 +146,11 @@ def data_etl(data_array, invalid_item_ids = []):
         item_id_val = item_reverse_dict[item_id]
         log_key = str(learner_id_val)+'#'+str(item_id_val)
 
-        t = user_log_cnt[learner_id_val] 
         if log_type == 3:
-            tmp_dict[log_key].append((learner_id_val, t, item_id_val, res))
+            tmp_dict[log_key].append((learner_id_val, item_id_val, res))
         elif log_type == 4:
-            tmp_dict[log_key].append((learner_id_val, t, item_id_val, res, effort))
+            tmp_dict[log_key].append((learner_id_val, item_id_val, res, effort))
 
-        user_log_cnt[learner_id_val] += 1
     # output
     data = []
     for logs in tmp_dict.values():
@@ -309,23 +306,17 @@ if __name__ == '__main__':
     print(decode_state2log(state_id))
     print([(1,0,1,1),(2,1,1,1),(3,0,0,1)])
 
-    """
     # unit test state generating
-    X_mat = generate_states(2,2)
+    X_mat = np.zeros((2,1),dtype=int);X_mat[1,0]=1
     print(X_mat)
-    print(np.array([[0,0],[1,1]])) 
+    print(np.array([[0],[1]])) 
     # check for the conditional llk under both regime
     state_init_dist = np.array([0.6, 0.4])                        
     observ_prob_matrix = np.array([[[0.8,0.2],[0.1, 0.9]]])
-    T= 5
-    effort_prob_matrix = []
-    
-    X = [0,1]
-    O = [0,1]
-    E = [1,1]
-    J = [0,0]
-    item_ids = [0,0]
-    llk_vec =  get_llk_all_states(X_mat, O, E, J, item_ids, observ_prob_matrix, state_init_dist, effort_prob_matrix,False)
+    effort_prob_matrix = np.array([[[0.8,0.2],[0.1, 0.9]]])
+    #import ipdb;ipdb.set_trace()
+
+    data_logs=[[0,0,1,1],[0,1,1,1]]
+    llk_vec =  get_llk_all_states(X_mat, data_logs, observ_prob_matrix, state_init_dist, effort_prob_matrix,False)
     print(llk_vec) 
-    print(0.6*0.8*0.2, 0.4*0.1*0.9) 
-    """
+    print(math.log(0.6*0.8*0.2), math.log(0.4*0.1*0.9)) 
