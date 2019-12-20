@@ -1,0 +1,15 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+verify_ssl = true
+
+[dev-packages]
+black = "*"
+
+[packages]
+numpy = "*"
+cython = "*"
+joblib = "*"
+tqdm = "*"
+gevent = "*"
+
