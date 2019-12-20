@@ -12,6 +12,7 @@ data/17zuoye/*
 data
 sandbox
 thesiswork
+.idea/
 
 ## Core latex/pdflatex auxiliary files:
 *.aux
